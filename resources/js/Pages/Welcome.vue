@@ -209,23 +209,6 @@ const categoryConfig = {
     reminder: { label: 'Reminder', color: '#b45309', bg: '#fffbeb' },
 };
 
-const milestoneList = [
-    { key: 'hazardAssessment', name: 'Hazard Assessment & Site Feasibility', office: 'MEO / MDRRMO', desc: 'Geotechnical, flood, and safety hazard site evaluation.' },
-    { key: 'powDed', name: 'Program of Works (POW) & DED', office: 'MEO', desc: 'Detailed engineering designs, bill of materials, and cost estimates.' },
-    { key: 'supplementalBudget', name: 'Budget Appropriation / Supplemental', office: 'End User', desc: 'Municipal budget ordinance and funding allocation certification.' },
-    { key: 'alobs', name: 'Allotment & Obligation Slip (ALOBS)', office: 'End User', desc: 'Local accounting allotment obligation and funds earmarked.' },
-    { key: 'eccCnc', name: 'Environmental Clearance (ECC / CNC)', office: 'MENRO', desc: 'DENR environmental compliance certificate or CNC non-coverage.' },
-    { key: 'technicalDocsToBac', name: 'BAC Technical Endorsement', office: 'MEO', desc: 'Submission of complete technical bidding documents to BAC.' },
-    { key: 'bidding', name: 'Competitive Public Bidding', office: 'BAC', desc: 'Competitive procurement bidding under Republic Act 9184.' },
-    { key: 'contractNtp', name: 'Contract Award & Notice to Proceed', office: 'GSO', desc: 'Final contract execution, performance bond, and issuance of NTP.' },
-];
-
-const milestoneStatusMap = {
-    green: { label: 'Done', color: '#166534', bg: '#dcfce7', border: '#86efac', icon: 'check', desc: 'Completed & Verified' },
-    yellow: { label: 'In Progress', color: '#854d0e', bg: '#fef9c3', border: '#fde047', icon: 'clock', desc: 'Ongoing Activity' },
-    red: { label: 'Pending', color: '#991b1b', bg: '#fee2e2', border: '#fca5a5', icon: 'alert', desc: 'Pending / Not Started' },
-    na: { label: 'N/A', color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: 'minus', desc: 'Not Applicable' },
-};
 
 // Transparency KPIs
 const totalProjectsCount = computed(() => projects.value.length);
@@ -1284,63 +1267,7 @@ onUnmounted(() => {
                             </div>
                         </div>
 
-                        <!-- 5. Pre-Engineering & Procurement Checklist (8 Milestones) -->
-                        <div class="disclosure-section" v-if="selectedProject.technical_preparations">
-                            <div class="milestones-header">
-                                <div>
-                                    <h4 class="disc-title" style="margin-bottom: 2px;">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                                        Pre-Engineering &amp; Procurement Checklist
-                                    </h4>
-                                    <p class="disc-sub">Mandatory government pre-construction compliance tracking by designated office / entity.</p>
-                                </div>
-                            </div>
-
-                            <div class="milestones-grid">
-                                <div 
-                                    v-for="ms in milestoneList" 
-                                    :key="ms.key" 
-                                    class="milestone-card"
-                                    :class="`ms-status-${selectedProject.technical_preparations[ms.key]?.status || 'na'}`"
-                                >
-                                    <div class="ms-card-top">
-                                        <span class="ms-code">{{ ms.office }}</span>
-                                        <span 
-                                            class="ms-status-badge"
-                                            :style="{ 
-                                                color: milestoneStatusMap[selectedProject.technical_preparations[ms.key]?.status || 'na']?.color,
-                                                background: milestoneStatusMap[selectedProject.technical_preparations[ms.key]?.status || 'na']?.bg,
-                                                border: `1px solid ${milestoneStatusMap[selectedProject.technical_preparations[ms.key]?.status || 'na']?.border}`
-                                            }"
-                                        >
-                                            <svg v-if="selectedProject.technical_preparations[ms.key]?.status === 'green'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                            <svg v-else-if="selectedProject.technical_preparations[ms.key]?.status === 'yellow'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                            <svg v-else-if="selectedProject.technical_preparations[ms.key]?.status === 'red'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                            <span v-else>—</span>
-                                            {{ milestoneStatusMap[selectedProject.technical_preparations[ms.key]?.status || 'na']?.label }}
-                                        </span>
-                                    </div>
-                                    <h5 class="ms-name">{{ ms.name }}</h5>
-                                    <p class="ms-desc">{{ ms.desc }}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 6. Engineering Notes & Inspection Remarks -->
-                        <div class="disclosure-section" v-if="selectedProject.remarks && selectedProject.remarks.length > 0">
-                            <h4 class="disc-title">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                                Site Inspection &amp; Monitoring Remarks
-                            </h4>
-                            <div class="remarks-list">
-                                <div v-for="(rmk, idx) in selectedProject.remarks" :key="idx" class="remark-item">
-                                    <div class="remark-bullet"></div>
-                                    <div class="remark-text">{{ rmk }}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 7. Citizen Feedback & Public Oversight CTA -->
+                        <!-- 5. Citizen Feedback & Public Oversight CTA -->
                         <div class="disclosure-section citizen-oversight-card">
                             <div class="oversight-icon">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -2918,97 +2845,9 @@ html {
     line-height: 1.65;
 }
 
-/* MILESTONES GRID (8 STEPS) */
-.milestones-header {
-    margin-bottom: 4px;
-}
-.milestones-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-}
-.milestone-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    transition: all 0.2s ease;
-}
-.milestone-card:hover {
-    background: #fff;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    border-color: #cbd5e1;
-}
-.ms-card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2px;
-}
-.ms-code {
-    font-size: 10px;
-    font-weight: 700;
-    color: #1e40af;
-    background: #eff6ff;
-    padding: 2px 7px;
-    border-radius: 4px;
-    border: 1px solid #bfdbfe;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-.ms-status-badge {
-    font-size: 9.5px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 4px;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    text-transform: uppercase;
-}
-.ms-name {
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--steel);
-    line-height: 1.3;
-}
-.ms-desc {
-    font-size: 10px;
-    color: var(--muted);
-    line-height: 1.4;
-}
 
-/* REMARKS LIST */
-.remarks-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-.remark-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 10px 14px;
-}
-.remark-bullet {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--amber);
-    margin-top: 6px;
-    flex-shrink: 0;
-}
-.remark-text {
-    font-size: 12.5px;
-    color: #334155;
-    line-height: 1.5;
-}
+
+
 
 /* CITIZEN OVERSIGHT CARD */
 .citizen-oversight-card {
@@ -3172,9 +3011,7 @@ html {
     .transparency-kpi-grid {
         grid-template-columns: repeat(3, 1fr);
     }
-    .milestones-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+
     .announcements-grid {
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     }
@@ -3443,8 +3280,7 @@ html {
         max-height: 96vh;
     }
     .modal-grid,
-    .financial-cards-grid,
-    .milestones-grid {
+    .financial-cards-grid {
         grid-template-columns: 1fr;
     }
     .citizen-oversight-card {
