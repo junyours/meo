@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue';
+import { ref, computed, reactive, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import StaffAssignedInfo from './StaffAssignedInfo.vue';
 
@@ -101,6 +101,8 @@ const roleSuggestions = [
 ];
 
 // ==================== API FETCH ====================
+let pollTimer = null;
+
 const fetchAssignments = async () => {
     isLoading.value = true;
     try {
@@ -113,8 +115,31 @@ const fetchAssignments = async () => {
     }
 };
 
+const silentSyncAssignments = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (isLoading.value) return;
+
+    try {
+        const res = await axios.get(route('staff-assignments.index'));
+        if (res.data?.assignments && Array.isArray(res.data.assignments)) {
+            assignments.value = res.data.assignments;
+        }
+    } catch (err) {
+        // Silent background error handling
+    }
+};
+
 onMounted(() => {
     fetchAssignments();
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(silentSyncAssignments, 5000);
+});
+
+onUnmounted(() => {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
 });
 
 // ==================== COMPUTED METRICS ====================

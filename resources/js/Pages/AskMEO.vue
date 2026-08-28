@@ -1,75 +1,152 @@
 <script setup>
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { watch, computed, onMounted, ref } from 'vue';
+import { Head, Link, useForm, usePage, router } from '@inertiajs/vue3';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import axios from 'axios';
 
-const form = useForm({
-    fullname: '',
-    phone: '',
-    phone_na: false,
-    email: '',
-    email_na: false,
-    recaptcha_token: '',
-    not_robot: false,
-    subject: '',
-    message: '',
+const props = defineProps({
+    activeInquiry: {
+        type: Object,
+        default: null,
+    },
 });
 
 const page = usePage();
+const activeTab = ref(props.activeInquiry ? 'status' : 'form'); // 'form' | 'status' | 'lookup'
+const currentInquiry = ref(props.activeInquiry);
+const lastSyncedAt = ref(new Date());
+let pollTimer = null;
+
+const form = useForm({
+    fullname: props.activeInquiry ? props.activeInquiry.fullname : '',
+    phone: props.activeInquiry ? props.activeInquiry.phone : '',
+    email: props.activeInquiry ? (props.activeInquiry.email || '') : '',
+    location: '',
+    subject: '',
+    message: '',
+    photos: [], // Array of up to 5 files
+});
+
+const photosPreview = ref([]);
+const fileInput = ref(null);
 const isSubmitting = ref(false);
 
-watch(() => form.phone_na, (v) => { if (v) form.phone = '' });
-watch(() => form.email_na, (v) => { if (v) form.email = '' });
+// Lightbox modal state for viewing images full screen
+const lightboxImage = ref(null);
+const openLightbox = (url) => {
+    lightboxImage.value = url;
+};
+const closeLightbox = () => {
+    lightboxImage.value = null;
+};
 
-const hasSuccess = computed(() => {
-    return !!(page.props.value && page.props.value.flash && page.props.value.flash.success);
+// Lookup tracking state
+const lookupQuery = ref('');
+const isLookingUp = ref(false);
+const lookupError = ref('');
+const lookupResults = ref([]);
+
+const flashSuccess = computed(() => {
+    return page.props.flash?.success || null;
 });
 
-const hasErrors = computed(() => {
-    return Object.keys(form.errors).length > 0;
-});
+const handlePhotoChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || null;
-
-function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) return resolve();
-        const s = document.createElement('script');
-        s.src = src;
-        s.async = true;
-        s.defer = true;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error('recaptcha load error'));
-        document.head.appendChild(s);
-    });
-}
-
-onMounted(async () => {
-    if (!recaptchaSiteKey) return;
-    try {
-        await loadScript(`https://www.google.com/recaptcha/api.js?render=${recaptchaSiteKey}`);
-    } catch (e) {
-        console.warn('reCAPTCHA v3 failed to load', e);
+    const remainingSlots = 5 - photosPreview.value.length;
+    if (remainingSlots <= 0) {
+        alert('You have already attached the maximum of 5 pictures.');
+        if (fileInput.value) fileInput.value.value = '';
+        return;
     }
-});
 
-const submit = async () => {
-    if (!form.fullname || !String(form.fullname).trim()) return;
-    
+    if (files.length > remainingSlots) {
+        alert(`You can only attach ${remainingSlots} more picture(s). The first ${remainingSlots} will be added.`);
+    }
+
+    const filesToAdd = files.slice(0, remainingSlots);
+
+    for (const file of filesToAdd) {
+        if (file.size > 5 * 1024 * 1024) {
+            alert(`File "${file.name}" exceeds the maximum 5MB size limit.`);
+            continue;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            photosPreview.value.push({
+                file: file,
+                preview: event.target.result,
+                name: file.name,
+                size: (file.size / 1024).toFixed(1) + ' KB',
+            });
+            form.photos = photosPreview.value.map(p => p.file);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    if (fileInput.value) fileInput.value.value = '';
+};
+
+const removePhoto = (index) => {
+    photosPreview.value.splice(index, 1);
+    form.photos = photosPreview.value.map(p => p.file);
+    if (fileInput.value) fileInput.value.value = '';
+};
+
+const getSendUrl = () => {
+    try {
+        if (typeof route === 'function' && route().has && route().has('ask.meo.send')) {
+            return route('ask.meo.send');
+        }
+    } catch (e) {}
+    return '/ask-meo';
+};
+
+const getCheckStatusUrl = () => {
+    try {
+        if (typeof route === 'function' && route().has && route().has('ask.meo.check-status')) {
+            return route('ask.meo.check-status');
+        }
+    } catch (e) {}
+    return '/ask-meo/check-status';
+};
+
+const getResetUrl = () => {
+    try {
+        if (typeof route === 'function' && route().has && route().has('ask.meo.reset')) {
+            return route('ask.meo.reset');
+        }
+    } catch (e) {}
+    return '/ask-meo/reset';
+};
+
+const getResolvedUrl = (token) => {
+    try {
+        if (typeof route === 'function' && route().has && route().has('ask.meo.resolved')) {
+            return route('ask.meo.resolved', { token });
+        }
+    } catch (e) {}
+    return `/resolve-concern/${token}`;
+};
+
+const submitConcern = () => {
+    if (!form.fullname?.trim() || !form.phone?.trim() || !form.location?.trim() || !form.message?.trim()) {
+        return;
+    }
+
     isSubmitting.value = true;
 
-    if (recaptchaSiteKey && window.grecaptcha && window.grecaptcha.execute) {
-        try {
-            const token = await window.grecaptcha.execute(recaptchaSiteKey, { action: 'ask_meo' });
-            form.recaptcha_token = token;
-        } catch (e) {
-            console.warn('grecaptcha.execute failed', e);
-        }
-    }
-
-    form.post(route('ask.meo.send'), {
-        onSuccess: () => {
-            form.reset('subject', 'message', 'recaptcha_token', 'not_robot');
+    form.post(getSendUrl(), {
+        forceFormData: true,
+        onSuccess: (pageRes) => {
             isSubmitting.value = false;
+            if (pageRes.props.activeInquiry) {
+                currentInquiry.value = pageRes.props.activeInquiry;
+            }
+            activeTab.value = 'status';
+            photosPreview.value = [];
+            form.photos = [];
         },
         onError: () => {
             isSubmitting.value = false;
@@ -77,87 +154,249 @@ const submit = async () => {
     });
 };
 
-const inputClass = 'w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition placeholder:text-gray-400 disabled:bg-gray-50 disabled:text-gray-400 bg-white';
-const labelClass = 'block text-sm font-medium text-gray-700 mb-1.5';
-const errorClass = 'mt-1.5 text-xs text-red-600';
+const performLookup = async () => {
+    if (!lookupQuery.value.trim()) return;
+
+    isLookingUp.value = true;
+    lookupError.value = '';
+    lookupResults.value = [];
+
+    try {
+        const response = await axios.post(getCheckStatusUrl(), {
+            query: lookupQuery.value.trim(),
+        });
+
+        if (response.data && response.data.success) {
+            lookupResults.value = response.data.inquiries || [];
+        }
+    } catch (err) {
+        lookupError.value = err.response?.data?.message || 'No concern records found with that contact number or reference code.';
+    } finally {
+        isLookingUp.value = false;
+    }
+};
+
+const selectInquiryFromLookup = (inquiry) => {
+    if (inquiry.status === 'resolved') {
+        router.visit(getResolvedUrl(inquiry.tracking_token));
+        return;
+    }
+    currentInquiry.value = inquiry;
+    activeTab.value = 'status';
+};
+
+const syncActiveInquiry = async () => {
+    if (!currentInquiry.value?.tracking_token) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+
+    try {
+        const response = await axios.post(getCheckStatusUrl(), {
+            query: currentInquiry.value.tracking_token,
+        });
+
+        if (response.data && response.data.success && Array.isArray(response.data.inquiries) && response.data.inquiries.length > 0) {
+            const updated = response.data.inquiries[0];
+            // Compare and update if changed
+            if (JSON.stringify(updated) !== JSON.stringify(currentInquiry.value)) {
+                currentInquiry.value = updated;
+                lastSyncedAt.value = new Date();
+            }
+        }
+    } catch (err) {
+        // Silent error handling for background polling
+    }
+};
+
+onMounted(() => {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(syncActiveInquiry, 4000);
+});
+
+onUnmounted(() => {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+});
+
+const startRelayNewConcern = () => {
+    router.post(getResetUrl(), {}, {
+        onSuccess: () => {
+            currentInquiry.value = null;
+            form.fullname = '';
+            form.phone = '';
+            form.email = '';
+            form.location = '';
+            form.subject = '';
+            form.message = '';
+            form.photos = [];
+            form.clearErrors();
+            photosPreview.value = [];
+            if (fileInput.value) fileInput.value.value = '';
+            activeTab.value = 'form';
+        },
+        onError: () => {
+            currentInquiry.value = null;
+            form.fullname = '';
+            form.phone = '';
+            form.email = '';
+            form.location = '';
+            form.subject = '';
+            form.message = '';
+            form.photos = [];
+            photosPreview.value = [];
+            activeTab.value = 'form';
+        },
+    });
+};
+
+const switchToForm = () => {
+    if (currentInquiry.value && (currentInquiry.value.status === 'resolved' || currentInquiry.value.status === 'declined')) {
+        startRelayNewConcern();
+    } else {
+        activeTab.value = 'form';
+    }
+};
+
+const statusBadgeConfig = {
+    pending: {
+        label: 'Waiting for Acceptance',
+        sub: 'Your concern is currently in queue and awaiting review by the Municipal Engineering Office.',
+        badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+        dotClass: 'bg-amber-500 animate-pulse',
+        icon: 'clock',
+    },
+    accepted: {
+        label: 'Concern Accepted',
+        sub: 'Your concern has been accepted by the Municipal Engineering Office team for action.',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        dotClass: 'bg-emerald-500',
+        icon: 'check',
+    },
+    resolved: {
+        label: 'Concern Resolved',
+        sub: 'This concern has been addressed and completed by the Municipal Engineering Office.',
+        badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+        dotClass: 'bg-blue-500',
+        icon: 'check-double',
+    },
+    declined: {
+        label: 'Closed / Out of Scope',
+        sub: 'This inquiry was reviewed and marked as closed or directed to another municipal department.',
+        badgeClass: 'bg-slate-50 text-slate-700 border-slate-200',
+        dotClass: 'bg-slate-500',
+        icon: 'x',
+    },
+};
+
+const inputClass = 'w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition placeholder:text-gray-400 bg-white text-gray-900 shadow-sm';
+const labelClass = 'block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider';
+const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
 </script>
 
 <template>
-    <GuestLayout>
-        <Head title="Ask MEO - Municipal Engineering Office" />
+    <Head title="Ask MEO - Public Inquiries &amp; Concern Portal" />
 
-        <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-            <!-- Full Screen Blurred Background Logo -->
-            <div class="absolute inset-0 z-0">
-                <img 
-                    src="/image/meo_logo2.png" 
-                    alt="" 
-                    class="w-full h-full object-cover blur-[8px] scale-110"
-                />
+    <div class="min-h-screen flex flex-col justify-between relative overflow-hidden py-10 px-4 sm:px-6 lg:px-8 bg-slate-950">
+        <!-- Full Screen Blurred Background MEO Logo -->
+        <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            <img 
+                src="/image/meo_logo2.png" 
+                alt="Background MEO" 
+                class="w-full h-full object-cover blur-[10px] scale-110 opacity-60"
+            />
+            <!-- Dark Overlay for Readability -->
+            <div class="absolute inset-0 bg-black/60 backdrop-blur-[2px]"></div>
+            <!-- Red & Slate Ambient Gradient -->
+            <div class="absolute inset-0 bg-gradient-to-br from-red-950/40 via-slate-900/70 to-slate-950/90"></div>
+            <!-- Radial Center Glow -->
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        </div>
+
+        <div class="w-full max-w-2xl mx-auto relative z-10 my-auto">
+            <!-- Header Branding -->
+            <div class="text-center mb-6">
+                <Link href="/" class="inline-flex items-center justify-center mb-3 relative group">
+                    <div class="absolute inset-0 bg-red-600 rounded-2xl blur-xl opacity-40 group-hover:opacity-60 transition duration-300"></div>
+                    <img 
+                        src="/image/meo_logo2.png" 
+                        alt="MEO Logo" 
+                        class="w-16 h-16 rounded-2xl shadow-xl border border-white/20 object-cover relative transform group-hover:scale-105 transition duration-300"
+                    />
+                </Link>
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Ask MEO</h1>
+                <p class="mt-1 text-xs sm:text-sm font-medium text-red-400">Municipal Engineering Office — Municipality of Opol</p>
+                <p class="mt-1 text-xs text-slate-300 max-w-lg mx-auto">
+                    Direct public inquiry, community concern, and site observation reporting platform for all citizens.
+                </p>
             </div>
 
-            <!-- Dark Overlay for Readability -->
-            <div class="absolute inset-0 z-[1] bg-black/60"></div>
+            <!-- Navigation Tabs -->
+            <div class="flex items-center justify-center gap-2 mb-4">
+                <button 
+                    @click="switchToForm"
+                    class="px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-2 shadow-sm"
+                    :class="activeTab === 'form' ? 'bg-red-600 text-white shadow-red-900/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Send Concern
+                </button>
 
-            <!-- Red Tint Overlay -->
-            <div class="absolute inset-0 z-[1] bg-gradient-to-br from-red-900/30 via-transparent to-gray-900/50"></div>
+                <button 
+                    v-if="currentInquiry"
+                    @click="activeTab = 'status'"
+                    class="px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-2 shadow-sm"
+                    :class="activeTab === 'status' ? 'bg-red-600 text-white shadow-red-900/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Current Status
+                    <span 
+                        class="w-2 h-2 rounded-full"
+                        :class="currentInquiry.status === 'resolved' ? 'bg-blue-400' : (currentInquiry.status === 'accepted' ? 'bg-emerald-400' : 'bg-amber-400 animate-ping')"
+                    ></span>
+                </button>
 
-            <div class="w-full max-w-2xl relative z-10">
-                <!-- Header -->
-                <div class="text-center mb-8">
-                    <div class="inline-flex items-center justify-center mb-4 relative">
-                        <div class="absolute inset-0 bg-red-500 rounded-2xl blur-xl opacity-50"></div>
-                        <img 
-                            src="/image/meo_logo2.png" 
-                            alt="MEO Logo" 
-                            class="w-20 h-20 rounded-2xl shadow-2xl border-2 border-white/30 object-cover relative"
-                        />
-                    </div>
-                    <h1 class="text-2xl font-bold text-white">Ask MEO</h1>
-                    <p class="mt-2 text-sm text-gray-300">Municipal Engineering Office — Municipality of Opol</p>
-                    <p class="mt-1 text-xs text-gray-400">Send us your inquiries, concerns, or feedback. We'll get back to you as soon as possible.</p>
-                </div>
+                <button 
+                    @click="activeTab = 'lookup'"
+                    class="px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-2 shadow-sm"
+                    :class="activeTab === 'lookup' ? 'bg-red-600 text-white shadow-red-900/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Track Concern
+                </button>
+            </div>
 
-                <!-- Form Card -->
-                <div class="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
-                    <!-- Success Message -->
-                    <div 
-                        v-if="hasSuccess" 
-                        class="bg-emerald-50 border-b border-emerald-200 px-6 py-4"
-                    >
-                        <div class="flex items-center gap-3">
-                            <div class="shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
-                                <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                                </svg>
-                            </div>
+            <!-- Main Card Container -->
+            <div class="bg-white rounded-2xl shadow-2xl border border-white/20 overflow-hidden backdrop-blur-md">
+                
+                <!-- ==================== TAB 1: SUBMISSION FORM ==================== -->
+                <div v-if="activeTab === 'form'">
+                    <!-- Card Top Banner -->
+                    <div class="bg-gradient-to-r from-red-600 to-rose-700 px-6 py-4 text-white">
+                        <div class="flex items-center justify-between">
                             <div>
-                                <p class="text-sm font-medium text-emerald-800">Message Sent Successfully</p>
-                                <p class="text-xs text-emerald-600 mt-0.5">{{ page.props.value.flash.success }}</p>
+                                <h2 class="text-base font-bold flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-red-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                    </svg>
+                                    Submit a Concern / Inquiry
+                                </h2>
+                                <p class="text-xs text-red-100 mt-0.5">Please provide accurate contact details and location for verification.</p>
                             </div>
+                            <span class="text-[10px] uppercase font-bold bg-white/20 backdrop-blur-sm px-2.5 py-1 rounded-full text-white">
+                                Public Portal
+                            </span>
                         </div>
                     </div>
 
-                    <!-- Error Message -->
-                    <div 
-                        v-if="hasErrors && !hasSuccess" 
-                        class="bg-red-50 border-b border-red-200 px-6 py-4"
-                    >
-                        <div class="flex items-center gap-3">
-                            <div class="shrink-0 w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                                <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                            <div>
-                                <p class="text-sm font-medium text-red-800">Please correct the errors below</p>
-                                <p class="text-xs text-red-600 mt-0.5">Some fields need your attention</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Form -->
-                    <form @submit.prevent="submit" class="p-6 space-y-5">
+                    <!-- Form Body -->
+                    <form @submit.prevent="submitConcern" class="p-6 space-y-4">
                         <!-- Full Name -->
                         <div>
                             <label for="fullname" :class="labelClass">
@@ -168,130 +407,211 @@ const errorClass = 'mt-1.5 text-xs text-red-600';
                                 v-model="form.fullname"
                                 type="text"
                                 required
-                                autofocus
-                                placeholder="Enter your full name"
-                                :class="[inputClass, form.errors.fullname ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']"
+                                placeholder="e.g., Juan Dela Cruz"
+                                :class="[inputClass, form.errors.fullname ? 'border-red-400 bg-red-50/30' : '']"
                             />
                             <p v-if="form.errors.fullname" :class="errorClass">{{ form.errors.fullname }}</p>
                         </div>
 
-                        <!-- Phone & Email -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <!-- Phone -->
+                        <!-- Contact Number & Email -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <!-- Contact Number (Required) -->
                             <div>
-                                <div class="flex items-center justify-between mb-1.5">
-                                    <label for="phone" class="text-sm font-medium text-gray-700">Phone Number</label>
-                                    <label class="flex items-center gap-1.5 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            v-model="form.phone_na" 
-                                            class="w-3.5 h-3.5 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                                        />
-                                        <span class="text-xs text-gray-500">N/A</span>
-                                    </label>
+                                <label for="phone" :class="labelClass">
+                                    Contact Number <span class="text-red-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <input
+                                        id="phone"
+                                        v-model="form.phone"
+                                        type="tel"
+                                        required
+                                        placeholder="e.g., 09171234567"
+                                        :class="[inputClass, form.errors.phone ? 'border-red-400 bg-red-50/30' : '']"
+                                    />
                                 </div>
-                                <input
-                                    id="phone"
-                                    v-model="form.phone"
-                                    type="tel"
-                                    placeholder="+63 9XX XXX XXXX"
-                                    :disabled="form.phone_na"
-                                    :class="[inputClass, form.errors.phone ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']"
-                                />
+                                <p class="text-[11px] text-gray-500 mt-1">Used to track and send updates regarding your concern.</p>
                                 <p v-if="form.errors.phone" :class="errorClass">{{ form.errors.phone }}</p>
                             </div>
 
-                            <!-- Email -->
+                            <!-- Email (Optional) -->
                             <div>
-                                <div class="flex items-center justify-between mb-1.5">
-                                    <label for="email" class="text-sm font-medium text-gray-700">Email Address</label>
-                                    <label class="flex items-center gap-1.5 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            v-model="form.email_na" 
-                                            class="w-3.5 h-3.5 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                                        />
-                                        <span class="text-xs text-gray-500">N/A</span>
-                                    </label>
-                                </div>
+                                <label for="email" :class="labelClass">
+                                    Email Address <span class="text-gray-400 lowercase font-normal">(optional)</span>
+                                </label>
                                 <input
                                     id="email"
                                     v-model="form.email"
                                     type="email"
-                                    placeholder="you@example.com"
-                                    :disabled="form.email_na"
-                                    :class="[inputClass, form.errors.email ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']"
+                                    placeholder="e.g., juandelacruz@gmail.com"
+                                    :class="[inputClass, form.errors.email ? 'border-red-400 bg-red-50/30' : '']"
                                 />
                                 <p v-if="form.errors.email" :class="errorClass">{{ form.errors.email }}</p>
                             </div>
                         </div>
 
+                        <!-- Location / Barangay (Required) -->
+                        <div>
+                            <label for="location" :class="labelClass">
+                                Location / Barangay / Street <span class="text-red-500">*</span>
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                </div>
+                                <input
+                                    id="location"
+                                    v-model="form.location"
+                                    type="text"
+                                    required
+                                    placeholder="e.g., Barangay Poblacion, Purok 3 / Barra / Igpit / Taboc"
+                                    :class="[inputClass, 'pl-10', form.errors.location ? 'border-red-400 bg-red-50/30' : '']"
+                                />
+                            </div>
+                            <p class="text-[11px] text-gray-500 mt-1">Specify where the engineering concern, damaged facility, or project inquiry is located.</p>
+                            <p v-if="form.errors.location" :class="errorClass">{{ form.errors.location }}</p>
+                        </div>
+
                         <!-- Subject -->
                         <div>
-                            <label for="subject" :class="labelClass">Subject</label>
+                            <label for="subject" :class="labelClass">
+                                Subject / Topic <span class="text-gray-400 lowercase font-normal">(optional)</span>
+                            </label>
                             <input
                                 id="subject"
                                 v-model="form.subject"
                                 type="text"
-                                placeholder="What is this regarding?"
-                                :class="[inputClass, form.errors.subject ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']"
+                                placeholder="e.g., Road Repair Inquiry, Drainage Observation, Building Permit Question"
+                                :class="[inputClass, form.errors.subject ? 'border-red-400 bg-red-50/30' : '']"
                             />
                             <p v-if="form.errors.subject" :class="errorClass">{{ form.errors.subject }}</p>
                         </div>
 
-                        <!-- Message -->
+                        <!-- Message / Concern Details -->
                         <div>
                             <label for="message" :class="labelClass">
-                                Message <span class="text-red-500">*</span>
+                                Detailed Concern / Message <span class="text-red-500">*</span>
                             </label>
                             <textarea
                                 id="message"
                                 v-model="form.message"
-                                rows="5"
-                                placeholder="Describe your inquiry or concern in detail..."
-                                :class="[inputClass, 'resize-none', form.errors.message ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']"
+                                rows="4"
+                                required
+                                placeholder="Please describe the site details, issue, or question clearly..."
+                                :class="[inputClass, 'resize-none', form.errors.message ? 'border-red-400 bg-red-50/30' : '']"
                             ></textarea>
-                            <div class="flex justify-between mt-1.5">
+                            <div class="flex justify-between items-center mt-1">
                                 <p v-if="form.errors.message" :class="errorClass">{{ form.errors.message }}</p>
-                                <span class="text-xs text-gray-400 ml-auto">{{ form.message.length }} characters</span>
+                                <span class="text-[11px] text-gray-400 ml-auto">{{ form.message.length }} characters</span>
                             </div>
                         </div>
 
-                        <!-- Verification -->
-                        <div class="pt-2">
-                            <div v-if="recaptchaSiteKey" id="recaptcha-container"></div>
-                            <div v-else class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                                <input 
-                                    id="not_robot" 
-                                    type="checkbox" 
-                                    v-model="form.not_robot" 
-                                    class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                                />
-                                <label for="not_robot" class="text-sm text-gray-600 cursor-pointer">
-                                    I'm not a robot
-                                 </label>
+                        <!-- Picture Attachments (Optional - Up to 5 Pictures) -->
+                        <div class="pt-1">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                                    Photo Attachments <span class="text-gray-400 lowercase font-normal">(optional — up to 5 photos, max 5MB each)</span>
+                                </label>
+                                <span class="text-xs font-bold" :class="photosPreview.length >= 5 ? 'text-red-600' : 'text-slate-500'">
+                                    {{ photosPreview.length }} / 5 photos
+                                </span>
                             </div>
-                            <p v-if="form.errors.not_robot || form.errors.recaptcha_token || form.errors.recaptcha || form.errors.recaptcha_response" :class="errorClass">
-                                {{ form.errors.not_robot || form.errors.recaptcha_token || form.errors.recaptcha || form.errors.recaptcha_response }}
-                            </p>
+                            
+                            <!-- Hidden input for file selection -->
+                            <input 
+                                ref="fileInput"
+                                type="file" 
+                                accept="image/*"
+                                multiple
+                                class="hidden" 
+                                @change="handlePhotoChange"
+                            />
+
+                            <!-- Gallery of attached photos -->
+                            <div v-if="photosPreview.length > 0" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-2.5">
+                                <div 
+                                    v-for="(p, idx) in photosPreview" 
+                                    :key="idx"
+                                    class="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-sm aspect-video sm:aspect-square flex items-center justify-center"
+                                >
+                                    <img 
+                                        :src="p.preview" 
+                                        alt="Attached preview" 
+                                        class="w-full h-full object-cover"
+                                    />
+                                    <!-- Delete Overlay Button -->
+                                    <button 
+                                        type="button" 
+                                        @click="removePhoto(idx)"
+                                        class="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-red-600 text-white rounded-lg transition shadow"
+                                        title="Remove this photo"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                    <!-- Index Badge -->
+                                    <span class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-bold rounded">
+                                        #{{ idx + 1 }}
+                                    </span>
+                                </div>
+
+                                <!-- Add More Tile (if under 5) -->
+                                <button 
+                                    v-if="photosPreview.length < 5"
+                                    type="button"
+                                    @click="fileInput.click()"
+                                    class="border-2 border-dashed border-gray-300 hover:border-red-400 hover:bg-red-50/20 rounded-xl transition flex flex-col items-center justify-center gap-1 p-2 text-gray-500 aspect-video sm:aspect-square"
+                                >
+                                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    <span class="text-[11px] font-semibold text-gray-700">Add More</span>
+                                    <span class="text-[9px] text-gray-400">({{ 5 - photosPreview.length }} left)</span>
+                                </button>
+                            </div>
+
+                            <!-- Upload Box when zero photos -->
+                            <div 
+                                v-else 
+                                class="border-2 border-dashed border-gray-300 hover:border-red-400 rounded-xl p-4 transition-colors text-center bg-slate-50/60 cursor-pointer" 
+                                @click="fileInput.click()"
+                            >
+                                <div class="flex flex-col items-center justify-center gap-1.5">
+                                    <div class="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
+                                    <div class="text-xs text-gray-600 font-medium">
+                                        <span class="text-red-600 font-semibold underline">Click to upload up to 5 photos</span> of the site or issue
+                                    </div>
+                                    <p class="text-[10px] text-gray-400">PNG, JPG, JPEG, or WebP up to 5MB each</p>
+                                </div>
+                            </div>
+
+                            <p v-if="form.errors.photos" :class="errorClass">{{ form.errors.photos }}</p>
                         </div>
 
-                        <!-- Actions -->
+                        <!-- Submit Button -->
                         <div class="flex items-center justify-between pt-4 border-t border-gray-100">
                             <Link 
                                 href="/" 
-                                class="text-sm text-gray-500 hover:text-gray-700 transition flex items-center gap-1.5"
+                                class="text-xs text-gray-500 hover:text-gray-900 transition flex items-center gap-1.5 font-medium"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                                 </svg>
-                                Back to Home
+                                Return to Portal
                             </Link>
                             
                             <button
                                 type="submit"
-                                :disabled="form.processing || !form.fullname?.trim() || (!recaptchaSiteKey && !form.not_robot)"
-                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
+                                :disabled="form.processing || !form.fullname?.trim() || !form.phone?.trim() || !form.location?.trim() || !form.message?.trim()"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs sm:text-sm font-semibold rounded-xl hover:from-red-700 hover:to-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-md shadow-red-900/20"
                             >
                                 <svg v-if="form.processing" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -300,26 +620,357 @@ const errorClass = 'mt-1.5 text-xs text-red-600';
                                 <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                                 </svg>
-                                {{ form.processing ? 'Sending...' : 'Send Message' }}
+                                {{ form.processing ? 'Submitting...' : 'Submit Concern' }}
                             </button>
                         </div>
                     </form>
                 </div>
 
-                <!-- Footer Info -->
-                <div class="mt-6 text-center">
-                    <div class="flex items-center justify-center gap-2">
-                        <img 
-                            src="/image/meo_logo2.png" 
-                            alt="MEO" 
-                            class="w-5 h-5 rounded shadow-sm object-cover opacity-80"
-                        />
-                        <p class="text-xs text-gray-300">
-                            You can also reach us at <span class="font-medium text-white">engineeringopol@gmail.com</span> or visit our office during business hours.
-                        </p>
+                <!-- ==================== TAB 2: ACTIVE CONCERN STATUS ==================== -->
+                <div v-else-if="activeTab === 'status'" class="p-6">
+                    <div v-if="currentInquiry" class="space-y-5">
+                        
+                        <!-- Top Live Sync Indicator -->
+                        <div class="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200/80 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="relative flex h-2.5 w-2.5">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                </span>
+                                <span class="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Live Realtime Updates Active</span>
+                            </div>
+                            <span class="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                                Auto-checking for MEO engineering team responses
+                            </span>
+                        </div>
+
+                        <!-- Status Alert Card -->
+                        <div 
+                            class="rounded-2xl border p-5 transition-all shadow-sm"
+                            :class="currentInquiry.status === 'resolved' ? 'bg-blue-50/90 border-blue-300' : (currentInquiry.status === 'accepted' ? 'bg-emerald-50/80 border-emerald-200' : 'bg-amber-50/80 border-amber-200')"
+                        >
+                            <div class="flex items-start gap-4">
+                                <!-- Status Icon -->
+                                <div 
+                                    class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
+                                    :class="currentInquiry.status === 'resolved' ? 'bg-blue-600 text-white' : (currentInquiry.status === 'accepted' ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white')"
+                                >
+                                    <!-- Resolved Double-Check / Trophy Icon -->
+                                    <svg v-if="currentInquiry.status === 'resolved'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <!-- Accepted Check Icon -->
+                                    <svg v-else-if="currentInquiry.status === 'accepted'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <!-- Pending Loading Spinner -->
+                                    <svg v-else class="w-6 h-6 animate-spin" style="animation-duration: 4s;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="30 10"/>
+                                        <polyline points="12 6 12 12 16 14" stroke-width="2"/>
+                                    </svg>
+                                </div>
+
+                                <div class="flex-1 min-w-0">
+                                    <!-- Resolved State -->
+                                    <div v-if="currentInquiry.status === 'resolved'">
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300 mb-1">
+                                            <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                                            Status: Concern Resolved
+                                        </div>
+                                        <h3 class="text-base sm:text-lg font-bold text-blue-900 leading-tight">
+                                            Your concern has already been resolved!
+                                        </h3>
+                                        <p class="text-xs sm:text-sm text-blue-800 mt-1">
+                                            The Municipal Engineering Office has addressed, inspected, and completed action on your reported concern. Thank you for helping keep our community well-maintained!
+                                        </p>
+                                        <p v-if="currentInquiry.resolved_by_user" class="text-xs font-semibold text-blue-950 mt-1.5 flex items-center gap-1">
+                                            <span>Inspected &amp; Resolved by:</span>
+                                            <span class="bg-blue-200/70 px-2 py-0.5 rounded text-blue-900 font-bold">{{ currentInquiry.resolved_by_user.name }} ({{ currentInquiry.resolved_by_user.role?.toUpperCase() }})</span>
+                                        </p>
+                                    </div>
+
+                                    <!-- Accepted State -->
+                                    <div v-else-if="currentInquiry.status === 'accepted'">
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 mb-1">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                            Status: Already Accepted
+                                        </div>
+                                        <h3 class="text-base sm:text-lg font-bold text-emerald-900 leading-tight">
+                                            Your concern has already been accepted!
+                                        </h3>
+                                        <p class="text-xs sm:text-sm text-emerald-800 mt-1">
+                                            The Municipal Engineering Office has verified and accepted your report for site inspection / action.
+                                        </p>
+                                        <p v-if="currentInquiry.accepted_by_user" class="text-xs font-semibold text-emerald-950 mt-1.5 flex items-center gap-1">
+                                            <span>Accepted by:</span>
+                                            <span class="bg-emerald-200/70 px-2 py-0.5 rounded text-emerald-900 font-bold">{{ currentInquiry.accepted_by_user.name }} ({{ currentInquiry.accepted_by_user.role?.toUpperCase() }})</span>
+                                        </p>
+                                    </div>
+
+                                    <!-- Pending State -->
+                                    <div v-else>
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 mb-1">
+                                            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                            Status: Waiting for Accept
+                                        </div>
+                                        <h3 class="text-base sm:text-lg font-bold text-amber-900 leading-tight">
+                                            Your concern is waiting for acceptance
+                                        </h3>
+                                        <p class="text-xs sm:text-sm text-amber-800 mt-1">
+                                            Your concern is in the queue and will be reviewed by the designated MEO engineering staff.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- "Would you like to relay concerns again?" Action Prompt for Resolved & Accepted -->
+                            <div 
+                                v-if="currentInquiry.status === 'resolved'"
+                                class="mt-4 pt-3 border-t border-blue-200/70 flex flex-col sm:flex-row items-center justify-between gap-3"
+                            >
+                                <p class="text-xs font-semibold text-blue-900">
+                                    Your previous concern is resolved.
+                                </p>
+                                <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                    <Link 
+                                        :href="getResolvedUrl(currentInquiry.tracking_token)"
+                                        class="flex-1 sm:flex-initial px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-1.5"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        View Full Resolution Notice
+                                    </Link>
+                                    <button 
+                                        @click="startRelayNewConcern"
+                                        class="flex-1 sm:flex-initial px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Relay Concerns Again
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div 
+                                v-else-if="currentInquiry.status === 'accepted'"
+                                class="mt-4 pt-3 border-t border-emerald-200/60 flex flex-col sm:flex-row items-center justify-between gap-3"
+                            >
+                                <p class="text-xs font-semibold text-emerald-900">
+                                    Would you like to relay concerns again?
+                                </p>
+                                <button 
+                                    @click="startRelayNewConcern"
+                                    class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"
+                                >
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Relay Concerns Again
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Inquiry Details Summary Card -->
+                        <div class="border border-gray-200 rounded-2xl p-5 bg-slate-50/50 space-y-3">
+                            <div class="flex items-center justify-between border-b border-gray-200 pb-3">
+                                <div>
+                                    <span class="text-[10px] uppercase font-bold tracking-wider text-gray-500">Tracking Reference</span>
+                                    <p class="text-sm font-mono font-bold text-gray-900">{{ currentInquiry.tracking_token }}</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-[10px] uppercase font-bold tracking-wider text-gray-500">Date Logged</span>
+                                    <p class="text-xs font-semibold text-gray-700">{{ currentInquiry.created_at }}</p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                <div>
+                                    <span class="text-gray-500 font-medium">Citizen Name:</span>
+                                    <p class="font-semibold text-gray-900 mt-0.5">{{ currentInquiry.fullname }}</p>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500 font-medium">Contact Number:</span>
+                                    <p class="font-semibold text-gray-900 mt-0.5">{{ currentInquiry.phone }}</p>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <span class="text-gray-500 font-medium">Location:</span>
+                                    <p class="font-semibold text-red-700 mt-0.5 flex items-center gap-1">
+                                        <svg class="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+                                        {{ currentInquiry.location }}
+                                    </p>
+                                </div>
+                                <div class="sm:col-span-2" v-if="currentInquiry.subject">
+                                    <span class="text-gray-500 font-medium">Subject:</span>
+                                    <p class="font-semibold text-gray-900 mt-0.5">{{ currentInquiry.subject }}</p>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <span class="text-gray-500 font-medium">Concern Message:</span>
+                                    <div class="mt-1 bg-white p-3 rounded-xl border border-gray-200 text-gray-800 leading-relaxed whitespace-pre-line">
+                                        {{ currentInquiry.message }}
+                                    </div>
+                                </div>
+
+                                <!-- Attached Photos Gallery (Up to 5 Photos) -->
+                                <div class="sm:col-span-2" v-if="(currentInquiry.photo_urls && currentInquiry.photo_urls.length > 0) || currentInquiry.photo_url">
+                                    <span class="text-gray-500 font-medium block mb-1.5">Attached Site Photos:</span>
+                                    
+                                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        <div 
+                                            v-for="(photoUrl, pIdx) in (currentInquiry.photo_urls?.length ? currentInquiry.photo_urls : [currentInquiry.photo_url])" 
+                                            :key="pIdx"
+                                            @click="openLightbox(photoUrl)"
+                                            class="relative group rounded-xl overflow-hidden border border-gray-200 bg-black/5 aspect-video cursor-pointer"
+                                        >
+                                            <img 
+                                                :src="photoUrl" 
+                                                alt="Concern Attachment" 
+                                                class="w-full h-full object-cover group-hover:scale-105 transition duration-200"
+                                            />
+                                            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-semibold transition">
+                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"/></svg>
+                                                Enlarge
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Actions -->
+                        <div class="flex items-center justify-between pt-2">
+                            <button 
+                                @click="switchToForm"
+                                class="text-xs text-gray-600 hover:text-gray-900 font-semibold flex items-center gap-1.5"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 0118 0z" />
+                                </svg>
+                                Back to Form
+                            </button>
+
+                            <button 
+                                @click="startRelayNewConcern"
+                                class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition shadow-sm flex items-center gap-2"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                </svg>
+                                Submit Another Concern
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <!-- No active inquiry state in status tab -->
+                    <div v-else class="text-center py-8">
+                        <p class="text-sm text-gray-500 mb-3">No active concern submission found in your current session.</p>
+                        <button 
+                            @click="activeTab = 'form'" 
+                            class="px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl"
+                        >
+                            Submit a Concern
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ==================== TAB 3: TRACK / LOOKUP CONCERN ==================== -->
+                <div v-else-if="activeTab === 'lookup'" class="p-6 space-y-4">
+                    <div>
+                        <h3 class="text-base font-bold text-gray-900">Track Concern Status</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Enter your Contact Number or Reference Code (e.g. MEO-2026...) to see real-time updates.</p>
+                    </div>
+
+                    <form @submit.prevent="performLookup" class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input 
+                                v-model="lookupQuery" 
+                                type="text"
+                                required
+                                placeholder="Enter Contact Number or Reference Code..."
+                                :class="inputClass"
+                            />
+                        </div>
+                        <button 
+                            type="submit" 
+                            :disabled="isLookingUp || !lookupQuery.trim()"
+                            class="px-5 py-2.5 bg-red-600 text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-red-700 disabled:opacity-50 transition shadow-sm shrink-0 flex items-center gap-2"
+                        >
+                            <svg v-if="isLookingUp" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            Search
+                        </button>
+                    </form>
+
+                    <!-- Error Alert -->
+                    <div v-if="lookupError" class="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                        {{ lookupError }}
+                    </div>
+
+                    <!-- Search Results -->
+                    <div v-if="lookupResults.length > 0" class="space-y-3 pt-2">
+                        <p class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Found {{ lookupResults.length }} Concern Record(s):</p>
+                        
+                        <div 
+                            v-for="item in lookupResults" 
+                            :key="item.id"
+                            @click="selectInquiryFromLookup(item)"
+                            class="p-4 rounded-xl border border-gray-200 hover:border-red-400 bg-slate-50/50 hover:bg-red-50/20 transition cursor-pointer flex items-center justify-between gap-4"
+                        >
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-mono text-xs font-bold text-gray-900">{{ item.tracking_token }}</span>
+                                    <span 
+                                        class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase"
+                                        :class="statusBadgeConfig[item.status]?.badgeClass || 'bg-gray-100 text-gray-700'"
+                                    >
+                                        {{ statusBadgeConfig[item.status]?.label || item.status }}
+                                    </span>
+                                </div>
+                                <p class="text-xs font-semibold text-gray-800 truncate">{{ item.location }} — {{ item.subject || 'Concern' }}</p>
+                                <p class="text-[11px] text-gray-500 truncate mt-0.5">{{ item.message }}</p>
+                            </div>
+
+                            <div class="text-right shrink-0">
+                                <span class="text-[10px] text-gray-400 block">{{ item.created_at_relative }}</span>
+                                <span class="text-xs font-semibold text-red-600 hover:underline inline-flex items-center gap-1 mt-1">
+                                    View
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Footer Assistance Notice -->
+            <div class="mt-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                For immediate urgent public hazards, you may also visit the MEO office at Municipal Hall, Opol, Misamis Oriental.
+            </div>
         </div>
-    </GuestLayout>
+
+        <!-- Lightbox Modal -->
+        <div 
+            v-if="lightboxImage" 
+            class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+            @click.self="closeLightbox"
+        >
+            <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+                <button 
+                    @click="closeLightbox" 
+                    class="absolute -top-10 right-0 p-2 text-white/80 hover:text-white bg-white/10 rounded-full transition"
+                >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+                <img :src="lightboxImage" alt="Enlarged site attachment" class="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+                <a :href="lightboxImage" target="_blank" class="mt-3 text-xs text-slate-300 hover:text-white underline">
+                    Open original image in new tab
+                </a>
+            </div>
+        </div>
+    </div>
 </template>

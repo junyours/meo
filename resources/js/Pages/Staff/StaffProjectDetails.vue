@@ -1,9 +1,10 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import Sidebar from './Partials/Sidebar.vue';
 import DocumentScanner from '../Admin/Partials/DocumentScanner.vue';
+import NotificationDropdown from '../Admin/Partials/NotificationDropdown.vue';
 
 const props = defineProps({
     project: {
@@ -22,6 +23,19 @@ const props = defineProps({
 
 const page = usePage();
 const currentUser = computed(() => page.props.auth?.user);
+
+const isMyMessage = (msg) => {
+    if (!msg) return false;
+    const myId = currentUser.value?.id;
+    if (myId && msg.sender_id) {
+        return Number(myId) === Number(msg.sender_id);
+    }
+    if (msg.sender_role) {
+        const myRole = (currentUser.value?.role || 'staff').toLowerCase();
+        return msg.sender_role.toLowerCase() === myRole;
+    }
+    return false;
+};
 
 // Reactive project data
 const projectData = ref({ ...props.project });
@@ -488,6 +502,41 @@ const saveSpecs = async () => {
         isSavingSpecs.value = false;
     }
 };
+
+let directivesPollTimer = null;
+
+const syncDirectives = async () => {
+    if (!projectData.value?.id) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+
+    try {
+        let endpoint = '/staff-assignments';
+        try {
+            if (typeof route === 'function' && route().has && route().has('staff-assignments.index')) {
+                endpoint = route('staff-assignments.index');
+            }
+        } catch (e) {}
+
+        const res = await axios.get(endpoint, {
+            params: { project_id: projectData.value.id }
+        });
+
+        if (res.data?.assignments && Array.isArray(res.data.assignments)) {
+            projectAssignments.value = res.data.assignments;
+        }
+    } catch (e) {}
+};
+
+onMounted(() => {
+    directivesPollTimer = setInterval(syncDirectives, 4000);
+});
+
+onUnmounted(() => {
+    if (directivesPollTimer) {
+        clearInterval(directivesPollTimer);
+        directivesPollTimer = null;
+    }
+});
 </script>
 
 <template>
@@ -506,7 +555,7 @@ const saveSpecs = async () => {
             <div
                 :class="[
                     'flex-1 flex flex-col min-h-screen transition-all duration-200 min-w-0',
-                    sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'
+                    sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-56'
                 ]"
             >
                 <!-- Sticky Top Header (Mobile Optimized) -->
@@ -564,6 +613,8 @@ const saveSpecs = async () => {
                                 </svg>
                                 <span>Print Summary</span>
                             </button>
+
+                            <NotificationDropdown :projects="[projectData]" @navigate-tab="navigateToTab" />
                         </div>
                     </div>
                 </header>
@@ -972,20 +1023,51 @@ const saveSpecs = async () => {
                                         </div>
                                     </div>
 
-                                    <p v-if="item.note" class="text-xs text-slate-700 bg-white p-2.5 sm:p-3 border border-slate-200 leading-relaxed break-words">
-                                        <strong class="font-bold text-slate-800">Admin Directive:</strong> {{ item.note }}
-                                    </p>
-
-                                    <!-- Staff Reply / Feedback (Visible to Admin) -->
-                                    <div v-if="item.staffReply" class="bg-emerald-50 border border-emerald-200 p-2.5 sm:p-3 text-xs space-y-1.5">
-                                        <div class="flex items-center justify-between flex-wrap gap-1">
-                                            <span class="font-bold text-emerald-800 flex items-center gap-1.5 text-[11px]">
-                                                <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
-                                                Staff Response / Field Note (Visible to Admin)
-                                            </span>
-                                            <span v-if="item.staffRepliedAt" class="text-[10px] text-emerald-600 font-semibold">{{ item.staffRepliedAt }}</span>
+                                    <!-- Conversation Thread / Messages -->
+                                    <div v-if="Array.isArray(item.conversation) && item.conversation.length > 0" class="space-y-2 pt-1">
+                                        <div class="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                                            <span>Discussion & Progress Updates ({{ item.conversation.length }})</span>
                                         </div>
-                                        <p class="text-slate-800 whitespace-pre-line leading-relaxed break-words">{{ item.staffReply }}</p>
+                                        <div class="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                                            <div 
+                                                v-for="(msg, mIdx) in item.conversation" 
+                                                :key="msg.id || mIdx"
+                                                class="flex items-start gap-2"
+                                                :class="isMyMessage(msg) ? 'flex-row-reverse' : 'flex-row'"
+                                            >
+                                                <div 
+                                                    class="max-w-[85%] sm:max-w-[75%] p-2 sm:p-2.5 text-xs border shadow-2xs"
+                                                    :class="isMyMessage(msg) ? 'bg-emerald-700 border-emerald-800 text-white' : 'bg-white border-slate-200 text-slate-900'"
+                                                >
+                                                    <div class="flex items-center gap-2 mb-1 text-[10px]" :class="isMyMessage(msg) ? 'justify-end text-emerald-100' : 'justify-start text-slate-500'">
+                                                        <strong class="font-bold" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">
+                                                            {{ isMyMessage(msg) ? 'You' : msg.sender_name }}
+                                                        </strong>
+                                                        <span class="px-1 py-0.2 text-[9px] font-bold uppercase tracking-wider" :class="isMyMessage(msg) ? 'bg-emerald-900/60 text-emerald-100' : (msg.sender_role === 'staff' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-800')">
+                                                            {{ msg.sender_role || 'user' }}
+                                                        </span>
+                                                        <span v-if="msg.created_at" class="font-normal" :class="isMyMessage(msg) ? 'text-emerald-200' : 'text-slate-400'">{{ msg.created_at }}</span>
+                                                    </div>
+                                                    <p class="whitespace-pre-line leading-relaxed break-words" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">{{ msg.message }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-else class="space-y-1.5">
+                                        <p v-if="item.note" class="text-xs text-slate-700 bg-white p-2.5 sm:p-3 border border-slate-200 leading-relaxed break-words">
+                                            <strong class="font-bold text-slate-800">Admin Directive:</strong> {{ item.note }}
+                                        </p>
+                                        <div v-if="item.staffReply" class="bg-emerald-50 border border-emerald-200 p-2.5 sm:p-3 text-xs space-y-1.5">
+                                            <div class="flex items-center justify-between flex-wrap gap-1">
+                                                <span class="font-bold text-emerald-800 flex items-center gap-1.5 text-[11px]">
+                                                    <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                                                    Staff Response / Field Note
+                                                </span>
+                                                <span v-if="item.staffRepliedAt" class="text-[10px] text-emerald-600 font-semibold">{{ item.staffRepliedAt }}</span>
+                                            </div>
+                                            <p class="text-slate-800 whitespace-pre-line leading-relaxed break-words">{{ item.staffReply }}</p>
+                                        </div>
                                     </div>
 
                                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500 pt-2 border-t border-slate-200/60">

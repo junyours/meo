@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue';
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import { usePage, router } from '@inertiajs/vue3';
 import axios from 'axios';
 
@@ -18,6 +18,21 @@ const emit = defineEmits(['update:projects', 'project-selected']);
 
 const page = usePage();
 const currentUser = computed(() => page.props.auth?.user);
+
+let myProjectsPollTimer = null;
+
+const isMyMessage = (msg) => {
+    if (!msg) return false;
+    const myId = currentUser.value?.id;
+    if (myId && msg.sender_id) {
+        return Number(myId) === Number(msg.sender_id);
+    }
+    if (msg.sender_role) {
+        const myRole = (currentUser.value?.role || 'staff').toLowerCase();
+        return msg.sender_role.toLowerCase() === myRole;
+    }
+    return false;
+};
 
 const rawProjects = computed(() => {
     if (!props.initialProjects) return [];
@@ -86,6 +101,62 @@ const loadAssignedProjects = async () => {
         loadingAssignments.value = false;
     }
 };
+
+const silentSyncAssignedProjects = async () => {
+    if (!currentUser.value?.id) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (loadingAssignments.value) return;
+
+    try {
+        let endpoint = '/staff-assignments';
+        try {
+            if (typeof route === 'function' && route().has && route().has('staff-assignments.index')) {
+                endpoint = route('staff-assignments.index');
+            }
+        } catch (e) {}
+
+        const res = await axios.get(endpoint, {
+            params: { user_id: currentUser.value.id }
+        });
+
+        const serverAssignments = res.data.assignments || [];
+        assignments.value = serverAssignments;
+
+        const newAssignedIds = new Set();
+        serverAssignments.forEach(a => {
+            if (a.projectId) {
+                newAssignedIds.add(Number(a.projectId));
+            }
+        });
+
+        const userName = (currentUser.value?.name || '').toLowerCase();
+        rawProjects.value.forEach(p => {
+            if (p.userId && Number(p.userId) === Number(currentUser.value.id)) {
+                newAssignedIds.add(Number(p.id));
+            } else if (p.staffId && Number(p.staffId) === Number(currentUser.value.id)) {
+                newAssignedIds.add(Number(p.id));
+            } else if (p.handledBy && p.handledBy.toLowerCase() === userName) {
+                newAssignedIds.add(Number(p.id));
+            }
+        });
+
+        assignedProjectIds.value = newAssignedIds;
+    } catch (err) {
+        // Silent error
+    }
+};
+
+onMounted(() => {
+    loadAssignedProjects();
+    myProjectsPollTimer = setInterval(silentSyncAssignedProjects, 5000);
+});
+
+onUnmounted(() => {
+    if (myProjectsPollTimer) {
+        clearInterval(myProjectsPollTimer);
+        myProjectsPollTimer = null;
+    }
+});
 
 // Map of project ID to list of assignments
 const projectAssignmentsMap = computed(() => {
@@ -333,10 +404,6 @@ const handleSaveReply = async () => {
         isSubmittingReply.value = false;
     }
 };
-
-onMounted(() => {
-    loadAssignedProjects();
-});
 
 watch(() => props.initialProjects, () => {
     loadAssignedProjects();
@@ -682,17 +749,48 @@ watch(() => props.initialProjects, () => {
                             </div>
                         </div>
 
-                        <p v-if="item.note" class="text-xs text-slate-600 bg-white p-2.5 border border-slate-200 break-words">
-                            <strong class="font-semibold text-slate-800">Admin Directive:</strong> {{ item.note }}
-                        </p>
-
-                        <!-- Staff Reply / Note Display -->
-                        <div v-if="item.staffReply" class="bg-emerald-50 border border-emerald-200 p-2.5 rounded text-xs space-y-1">
-                            <div class="flex items-center justify-between text-[10px] text-emerald-800 font-bold flex-wrap gap-1">
-                                <span>💬 My Reply / Field Note (Visible to Admin)</span>
-                                <span v-if="item.staffRepliedAt">{{ item.staffRepliedAt }}</span>
+                        <!-- Conversation Thread / Messages -->
+                        <div v-if="Array.isArray(item.conversation) && item.conversation.length > 0" class="space-y-2 pt-1">
+                            <div class="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                                <span>Discussion & Updates ({{ item.conversation.length }})</span>
                             </div>
-                            <p class="text-slate-800 whitespace-pre-line break-words">{{ item.staffReply }}</p>
+                            <div class="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                <div 
+                                    v-for="(msg, mIdx) in item.conversation" 
+                                    :key="msg.id || mIdx"
+                                    class="flex items-start gap-2"
+                                    :class="isMyMessage(msg) ? 'flex-row-reverse' : 'flex-row'"
+                                >
+                                    <div 
+                                        class="max-w-[85%] sm:max-w-[75%] p-2 text-xs border shadow-2xs"
+                                        :class="isMyMessage(msg) ? 'bg-emerald-700 border-emerald-800 text-white' : 'bg-white border-slate-200 text-slate-900'"
+                                    >
+                                        <div class="flex items-center gap-2 mb-1 text-[10px]" :class="isMyMessage(msg) ? 'justify-end text-emerald-100' : 'justify-start text-slate-500'">
+                                            <strong class="font-bold" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">
+                                                {{ isMyMessage(msg) ? 'You' : msg.sender_name }}
+                                            </strong>
+                                            <span class="px-1 py-0.2 text-[9px] font-bold uppercase tracking-wider" :class="isMyMessage(msg) ? 'bg-emerald-900/60 text-emerald-100' : (msg.sender_role === 'staff' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-800')">
+                                                {{ msg.sender_role || 'user' }}
+                                            </span>
+                                            <span v-if="msg.created_at" class="font-normal" :class="isMyMessage(msg) ? 'text-emerald-200' : 'text-slate-400'">{{ msg.created_at }}</span>
+                                        </div>
+                                        <p class="whitespace-pre-line leading-relaxed break-words" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">{{ msg.message }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="space-y-1.5">
+                            <p v-if="item.note" class="text-xs text-slate-600 bg-white p-2.5 border border-slate-200 break-words">
+                                <strong class="font-semibold text-slate-800">Admin Directive:</strong> {{ item.note }}
+                            </p>
+                            <div v-if="item.staffReply" class="bg-emerald-50 border border-emerald-200 p-2.5 rounded text-xs space-y-1">
+                                <div class="flex items-center justify-between text-[10px] text-emerald-800 font-bold flex-wrap gap-1">
+                                    <span>💬 My Reply / Field Note</span>
+                                    <span v-if="item.staffRepliedAt">{{ item.staffRepliedAt }}</span>
+                                </div>
+                                <p class="text-slate-800 whitespace-pre-line break-words">{{ item.staffReply }}</p>
+                            </div>
                         </div>
 
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">

@@ -144,6 +144,8 @@ const getRelativeScheduleLabel = (dateStr) => {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+let directivePollTimer = null;
+
 // Load directives for this staff member
 const loadDirectives = async () => {
     isLoadingDirectives.value = true;
@@ -165,6 +167,22 @@ const loadDirectives = async () => {
         console.error('Failed to fetch staff directives:', e);
     } finally {
         isLoadingDirectives.value = false;
+    }
+};
+
+const silentSyncDirectives = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (isLoadingDirectives.value) return;
+
+    try {
+        const userId = currentUser.value?.id;
+        const url = userId ? `/staff-assignments?user_id=${userId}` : '/staff-assignments';
+        const res = await axios.get(url);
+        if (res.data?.assignments && Array.isArray(res.data.assignments)) {
+            directives.value = res.data.assignments;
+        }
+    } catch (e) {
+        // Silent background polling error
     }
 };
 
@@ -413,11 +431,17 @@ onMounted(() => {
     loadReminders();
     startAutoPlay();
     window.addEventListener('keydown', handleKeyDown);
+    if (directivePollTimer) clearInterval(directivePollTimer);
+    directivePollTimer = setInterval(silentSyncDirectives, 5000);
 });
 
 onUnmounted(() => {
     stopAutoPlay();
     window.removeEventListener('keydown', handleKeyDown);
+    if (directivePollTimer) {
+        clearInterval(directivePollTimer);
+        directivePollTimer = null;
+    }
 });
 
 watch(sortedDirectives, () => {

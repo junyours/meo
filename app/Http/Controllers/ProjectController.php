@@ -54,10 +54,50 @@ class ProjectController extends Controller
             'staff_count' => \App\Models\User::where('role', 'staff')->count(),
         ];
 
+        $inquiries = \App\Models\Inquiry::with(['acceptedBy', 'resolvedBy', 'updatedBy'])->latest()->get()->map(function (\App\Models\Inquiry $inquiry) {
+            return [
+                'id' => $inquiry->id,
+                'tracking_token' => $inquiry->tracking_token,
+                'fullname' => $inquiry->fullname,
+                'phone' => $inquiry->phone,
+                'email' => $inquiry->email,
+                'location' => $inquiry->location,
+                'subject' => $inquiry->subject,
+                'message' => $inquiry->message,
+                'photo_url' => $inquiry->photo_url,
+                'photo_urls' => $inquiry->photo_urls,
+                'status' => $inquiry->status,
+                'admin_notes' => $inquiry->admin_notes,
+                'accepted_at' => $inquiry->accepted_at?->format('M j, Y g:i A'),
+                'accepted_by' => $inquiry->accepted_by,
+                'accepted_by_user' => $inquiry->acceptedBy ? [
+                    'id' => $inquiry->acceptedBy->id,
+                    'name' => $inquiry->acceptedBy->name,
+                    'role' => $inquiry->acceptedBy->role,
+                ] : null,
+                'resolved_at' => $inquiry->resolved_at?->format('M j, Y g:i A'),
+                'resolved_by' => $inquiry->resolved_by,
+                'resolved_by_user' => $inquiry->resolvedBy ? [
+                    'id' => $inquiry->resolvedBy->id,
+                    'name' => $inquiry->resolvedBy->name,
+                    'role' => $inquiry->resolvedBy->role,
+                ] : null,
+                'updated_by' => $inquiry->updated_by,
+                'updated_by_user' => $inquiry->updatedBy ? [
+                    'id' => $inquiry->updatedBy->id,
+                    'name' => $inquiry->updatedBy->name,
+                    'role' => $inquiry->updatedBy->role,
+                ] : null,
+                'created_at' => $inquiry->created_at?->format('M j, Y g:i A'),
+                'created_at_relative' => $inquiry->created_at?->diffForHumans(),
+            ];
+        });
+
         return Inertia::render($page, [
             'users' => \App\Models\User::all(),
             'stats' => $stats,
             'projects' => Projects::with(['remarks', 'latestFundType', 'techprep'])->latest()->get()->map(fn (Projects $project) => $this->toProjectTabData($project)),
+            'inquiries' => $inquiries,
         ]);
     }
 

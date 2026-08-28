@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, onMounted, onUnmounted } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 
 const props = defineProps({
@@ -19,6 +20,26 @@ const props = defineProps({
 
 const emit = defineEmits(['back', 'refresh']);
 
+let discussionPollTimer = null;
+
+onMounted(() => {
+    discussionPollTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && !document.hidden) {
+            emit('refresh');
+        }
+    }, 4000);
+});
+
+onUnmounted(() => {
+    if (discussionPollTimer) {
+        clearInterval(discussionPollTimer);
+        discussionPollTimer = null;
+    }
+});
+
+const page = usePage();
+const currentUser = computed(() => page.props.auth?.user || {});
+
 // Active Tab
 const activeTab = ref('projects'); // 'projects', 'deadlines', 'notes'
 
@@ -28,10 +49,10 @@ const showDeadlineModal = ref(false);
 const showNoteModal = ref(false);
 const isSubmitting = ref(false);
 
-// Active Inline Reply State
-const activeReplyItemId = ref(null);
-const replyText = ref('');
-const isSubmittingReply = ref(false);
+// Active Conversations State
+const openConversations = reactive({});
+const conversationInputs = reactive({});
+const isSendingMessage = reactive({});
 
 // Toast Notification
 const toast = reactive({
@@ -186,38 +207,89 @@ const openNote = () => {
     showNoteModal.value = true;
 };
 
-// Reply triggers
-const openReply = (item) => {
-    if (activeReplyItemId.value === item.id) {
-        activeReplyItemId.value = null;
-        replyText.value = '';
-    } else {
-        activeReplyItemId.value = item.id;
-        replyText.value = item.staffReply || '';
+// Conversation Triggers & Handlers
+const toggleConversation = (item) => {
+    openConversations[item.id] = !openConversations[item.id];
+    if (openConversations[item.id] && conversationInputs[item.id] === undefined) {
+        conversationInputs[item.id] = '';
     }
 };
 
-const submitReply = async (item) => {
-    if (!replyText.value.trim()) {
-        showToast('Please type a reply message.', 'error');
+const getConversation = (item) => {
+    if (Array.isArray(item.conversation) && item.conversation.length > 0) {
+        return item.conversation;
+    }
+    const fallback = [];
+    if (item.note) {
+        fallback.push({
+            id: 'note_' + item.id,
+            sender_id: item.assignedBy || item.assigned_by,
+            sender_name: item.assignerName || 'Admin / Assigner',
+            sender_role: 'admin',
+            message: item.note,
+            created_at: item.createdAt ? formatDate(item.createdAt) : '',
+        });
+    }
+    if (item.staffReply) {
+        fallback.push({
+            id: 'reply_' + item.id,
+            sender_id: item.userId || item.user_id,
+            sender_name: item.userName || props.staff.name || 'Staff',
+            sender_role: 'staff',
+            message: item.staffReply,
+            created_at: item.staffRepliedAt || '',
+        });
+    }
+    return fallback;
+};
+
+const sendConversationMessage = async (item) => {
+    const text = (conversationInputs[item.id] || '').trim();
+    if (!text) {
+        showToast('Please type a message before sending.', 'error');
         return;
     }
 
-    isSubmittingReply.value = true;
+    isSendingMessage[item.id] = true;
     try {
-        await axios.patch(route('staff-assignments.reply', item.id), {
-            staff_reply: replyText.value.trim(),
+        let endpoint = `/staff-assignments/${item.id}/message`;
+        if (typeof route === 'function' && route().has && route().has('staff-assignments.message')) {
+            endpoint = route('staff-assignments.message', item.id);
+        }
+        await axios.post(endpoint, {
+            message: text,
         });
-        showToast('Reply saved successfully!');
-        activeReplyItemId.value = null;
-        replyText.value = '';
+        showToast('Message sent to discussion!');
+        conversationInputs[item.id] = '';
         emit('refresh');
     } catch (err) {
-        const msg = err.response?.data?.message || 'Failed to submit reply.';
+        const msg = err.response?.data?.message || 'Failed to send message.';
         showToast(msg, 'error');
     } finally {
-        isSubmittingReply.value = false;
+        isSendingMessage[item.id] = false;
     }
+};
+
+const handleKeyDown = (e, item) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendConversationMessage(item);
+    }
+};
+
+const isMyMessage = (msg) => {
+    if (!msg) return false;
+    const myId = currentUser.value?.id;
+    if (myId && msg.sender_id) {
+        return Number(myId) === Number(msg.sender_id);
+    }
+    if (msg.sender_role) {
+        const myRole = (currentUser.value?.role || 'admin').toLowerCase();
+        if (msg.sender_role.toLowerCase() === myRole && myRole !== 'staff') {
+            return true;
+        }
+    }
+    return false;
 };
 
 // Form Submissions
@@ -328,17 +400,76 @@ const toggleDeadlineStatus = async (item) => {
     }
 };
 
-const handleDeleteItem = async (item) => {
-    if (!confirm(`Are you sure you want to remove this ${item.type === 'assignment' ? 'project assignment' : item.type}?`)) {
-        return;
-    }
+// Confirmation Modal State & Handlers
+const confirmModal = reactive({
+    show: false,
+    item: null,
+    type: 'assignment', // 'assignment' | 'deadline' | 'note'
+    title: '',
+    message: '',
+    confirmButtonText: 'Confirm Unassign',
+    confirmButtonClass: 'bg-rose-700 hover:bg-rose-800 text-white',
+    isProcessing: false,
+});
 
+const promptUnassignProject = (item) => {
+    confirmModal.item = item;
+    confirmModal.type = 'assignment';
+    confirmModal.title = 'Unassign Project Assignment';
+    confirmModal.message = `Are you sure you want to unassign ${props.staff.name} from "${item.projectName || item.title}"? This will revoke project access and field responsibilities from this staff member.`;
+    confirmModal.confirmButtonText = 'Yes, Unassign Project';
+    confirmModal.confirmButtonClass = 'bg-rose-700 hover:bg-rose-800 text-white';
+    confirmModal.isProcessing = false;
+    confirmModal.show = true;
+};
+
+const promptDeleteDeadline = (item) => {
+    confirmModal.item = item;
+    confirmModal.type = 'deadline';
+    confirmModal.title = 'Delete Milestone / Target Deadline';
+    confirmModal.message = `Are you sure you want to delete the target deadline "${item.title}"?`;
+    confirmModal.confirmButtonText = 'Yes, Delete Milestone';
+    confirmModal.confirmButtonClass = 'bg-rose-700 hover:bg-rose-800 text-white';
+    confirmModal.isProcessing = false;
+    confirmModal.show = true;
+};
+
+const promptDeleteNote = (item) => {
+    confirmModal.item = item;
+    confirmModal.type = 'note';
+    confirmModal.title = 'Delete Directive / Note';
+    confirmModal.message = `Are you sure you want to delete the directive "${item.title}"?`;
+    confirmModal.confirmButtonText = 'Yes, Delete Directive';
+    confirmModal.confirmButtonClass = 'bg-rose-700 hover:bg-rose-800 text-white';
+    confirmModal.isProcessing = false;
+    confirmModal.show = true;
+};
+
+const closeConfirmModal = () => {
+    if (confirmModal.isProcessing) return;
+    confirmModal.show = false;
+    confirmModal.item = null;
+};
+
+const executeConfirmAction = async () => {
+    if (!confirmModal.item) return;
+    confirmModal.isProcessing = true;
     try {
-        await axios.delete(route('staff-assignments.destroy', item.id));
-        showToast('Record removed successfully.');
+        await axios.delete(route('staff-assignments.destroy', confirmModal.item.id));
+        if (confirmModal.type === 'assignment') {
+            showToast('Project unassigned successfully.');
+        } else if (confirmModal.type === 'deadline') {
+            showToast('Target deadline removed successfully.');
+        } else {
+            showToast('Directive removed successfully.');
+        }
+        confirmModal.show = false;
+        confirmModal.item = null;
         emit('refresh');
     } catch (err) {
-        showToast('Failed to delete record.', 'error');
+        showToast('Failed to remove record. Please try again.', 'error');
+    } finally {
+        confirmModal.isProcessing = false;
     }
 };
 </script>
@@ -534,19 +665,22 @@ const handleDeleteItem = async (item) => {
                             </span>
                         </div>
 
-                        <!-- Action Buttons: Reply & Unassign -->
+                        <!-- Action Buttons: Conversation & Unassign -->
                         <div class="flex items-center gap-1.5 self-end sm:self-auto">
                             <button 
-                                @click="openReply(item)"
-                                class="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold transition border"
-                                :class="activeReplyItemId === item.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-300'"
-                                title="Reply or Add Feedback"
+                                @click="toggleConversation(item)"
+                                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold transition border"
+                                :class="openConversations[item.id] ? 'bg-slate-900 text-white border-slate-900' : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-300'"
+                                title="Open Conversation Thread"
                             >
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                                <span>{{ item.staffReply ? 'Edit Reply' : 'Reply' }}</span>
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                                <span>Discussion</span>
+                                <span class="px-1.5 py-0.2 text-[10px] font-bold" :class="openConversations[item.id] ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-800'">
+                                    {{ getConversation(item).length }}
+                                </span>
                             </button>
                             <button 
-                                @click="handleDeleteItem(item)"
+                                @click="promptUnassignProject(item)"
                                 class="px-2 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition"
                                 title="Unassign Project"
                             >
@@ -557,43 +691,81 @@ const handleDeleteItem = async (item) => {
 
                     <!-- Instructions / Description -->
                     <div v-if="item.note" class="text-xs text-gray-700 bg-gray-50 p-2 border-l-2 border-slate-300">
-                        <strong class="font-semibold text-gray-900">Instructions:</strong> {{ item.note }}
+                        <strong class="font-semibold text-gray-900">Initial Directive:</strong> {{ item.note }}
                     </div>
 
-                    <!-- Existing Reply Box / Bubble -->
-                    <div v-if="item.staffReply" class="bg-emerald-50/80 border border-emerald-200 p-2.5 text-xs space-y-0.5">
-                        <div class="flex items-center justify-between text-[10px] text-emerald-800 font-bold">
-                            <span>💬 Staff Feedback / Field Report</span>
-                            <span v-if="item.staffRepliedAt">{{ item.staffRepliedAt }}</span>
+                    <!-- Conversation Thread Panel -->
+                    <div v-if="openConversations[item.id]" class="mt-2 border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-emerald-500 animate-pulse"></span>
+                                <span class="font-bold text-slate-900 text-xs">Project Discussion & Field Updates</span>
+                                <span class="text-[10px] text-slate-500">({{ getConversation(item).length }} message{{ getConversation(item).length === 1 ? '' : 's' }})</span>
+                            </div>
+                            <button @click="openConversations[item.id] = false" class="text-slate-400 hover:text-slate-600 text-xs font-semibold">
+                                Collapse ✕
+                            </button>
                         </div>
-                        <p class="text-slate-800 font-medium whitespace-pre-line">{{ item.staffReply }}</p>
-                    </div>
 
-                    <!-- Interactive Reply Input Box (when open) -->
-                    <div v-if="activeReplyItemId === item.id" class="pt-1 space-y-2 bg-slate-50 p-2.5 border border-slate-200">
-                        <label class="block text-[11px] font-bold text-gray-700">Write Field Note / Reply:</label>
-                        <textarea 
-                            v-model="replyText"
-                            rows="2"
-                            placeholder="Type progress update, reply, or remarks regarding this project..."
-                            class="w-full text-xs border border-gray-300 p-2 focus:border-red-600 focus:ring-1 focus:ring-red-600 bg-white"
-                        ></textarea>
-                        <div class="flex items-center justify-end gap-1.5">
-                            <button 
-                                type="button" 
-                                @click="activeReplyItemId = null"
-                                class="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 transition"
+                        <!-- Thread Messages -->
+                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            <div v-if="getConversation(item).length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+                                No messages in this discussion yet. Start the conversation below.
+                            </div>
+                            <div 
+                                v-for="(msg, mIdx) in getConversation(item)" 
+                                :key="msg.id || mIdx"
+                                class="flex items-start gap-2.5"
+                                :class="isMyMessage(msg) ? 'flex-row-reverse' : 'flex-row'"
                             >
-                                Cancel
-                            </button>
-                            <button 
-                                type="button"
-                                @click="submitReply(item)"
-                                :disabled="isSubmittingReply"
-                                class="px-3 py-1 text-xs font-bold text-white bg-red-700 hover:bg-red-800 transition disabled:opacity-50"
-                            >
-                                {{ isSubmittingReply ? 'Saving...' : 'Post Reply' }}
-                            </button>
+                                <div 
+                                    class="w-7 h-7 shrink-0 text-[10px] font-bold flex items-center justify-center text-white overflow-hidden shadow-2xs"
+                                    :class="isMyMessage(msg) ? 'bg-red-700' : (msg.sender_role === 'staff' ? 'bg-emerald-700' : 'bg-slate-700')"
+                                >
+                                    <img v-if="msg.sender_photo" :src="msg.sender_photo" class="w-full h-full object-cover" />
+                                    <span v-else>{{ getInitials(msg.sender_name) }}</span>
+                                </div>
+
+                                <div 
+                                    class="max-w-[85%] sm:max-w-[75%] p-2.5 text-xs shadow-2xs border"
+                                    :class="isMyMessage(msg) ? 'bg-red-700 border-red-800 text-white' : 'bg-white border-slate-200 text-slate-900'"
+                                >
+                                    <div class="flex items-center gap-2 mb-1 text-[10px]" :class="isMyMessage(msg) ? 'justify-end text-red-100' : 'justify-start text-slate-500'">
+                                        <strong class="font-bold" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-900'">
+                                            {{ isMyMessage(msg) ? 'You' : msg.sender_name }}
+                                        </strong>
+                                        <span class="px-1 py-0.2 text-[9px] font-bold uppercase tracking-wider" :class="isMyMessage(msg) ? 'bg-red-900/60 text-red-100' : (msg.sender_role === 'staff' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-800')">
+                                            {{ msg.sender_role || 'user' }}
+                                        </span>
+                                        <span v-if="msg.created_at" class="font-normal" :class="isMyMessage(msg) ? 'text-red-200' : 'text-slate-400'">{{ msg.created_at }}</span>
+                                    </div>
+                                    <p class="whitespace-pre-line leading-relaxed break-words" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">{{ msg.message }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Input -->
+                        <div class="pt-2 border-t border-slate-200 space-y-2">
+                            <textarea 
+                                v-model="conversationInputs[item.id]"
+                                @keydown="handleKeyDown($event, item)"
+                                rows="2"
+                                :placeholder="`Type a message, progress inquiry, or remarks to ${staff.name}... (Press Enter to send)`"
+                                class="w-full text-xs border border-slate-300 p-2.5 focus:border-red-600 focus:ring-1 focus:ring-red-600 bg-white placeholder:text-slate-400"
+                            ></textarea>
+                            <div class="flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                                <span class="text-slate-500 text-[10px]">💡 <kbd class="px-1 py-0.5 bg-slate-200 text-slate-700">Enter</kbd> to send • <kbd class="px-1 py-0.5 bg-slate-200 text-slate-700">Shift+Enter</kbd> for new line</span>
+                                <button 
+                                    type="button" 
+                                    @click="sendConversationMessage(item)"
+                                    :disabled="isSendingMessage[item.id] || !(conversationInputs[item.id] && conversationInputs[item.id].trim())"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-red-700 hover:bg-red-800 transition disabled:opacity-50 shadow-2xs"
+                                >
+                                    <svg v-if="isSendingMessage[item.id]" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                    <span>{{ isSendingMessage[item.id] ? 'Sending...' : 'Send Message' }}</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -653,60 +825,102 @@ const handleDeleteItem = async (item) => {
                             </div>
                         </div>
 
-                        <!-- Actions: Reply & Delete -->
+                        <!-- Actions: Conversation & Delete -->
                         <div class="flex items-center gap-1.5 shrink-0">
                             <button 
-                                @click="openReply(item)"
-                                class="px-2 py-1 text-xs font-semibold transition border"
-                                :class="activeReplyItemId === item.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-300'"
-                                title="Reply / Note"
+                                @click="toggleConversation(item)"
+                                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold transition border"
+                                :class="openConversations[item.id] ? 'bg-slate-900 text-white border-slate-900' : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-300'"
+                                title="Open Conversation Thread"
                             >
-                                💬 {{ item.staffReply ? 'Edit' : 'Reply' }}
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                                <span>Discussion</span>
+                                <span class="px-1.5 py-0.2 text-[10px] font-bold" :class="openConversations[item.id] ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-800'">
+                                    {{ getConversation(item).length }}
+                                </span>
                             </button>
                             <button 
-                                @click="handleDeleteItem(item)"
+                                @click="promptDeleteDeadline(item)"
                                 class="text-gray-400 hover:text-rose-600 p-1 transition"
-                                title="Delete Task"
+                                title="Delete Milestone / Target Deadline"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Existing Reply -->
-                    <div v-if="item.staffReply" class="bg-emerald-50 border border-emerald-200 p-2 text-xs space-y-0.5">
-                        <div class="flex items-center justify-between text-[10px] text-emerald-800 font-bold">
-                            <span>💬 Staff Reply</span>
-                            <span v-if="item.staffRepliedAt">{{ item.staffRepliedAt }}</span>
+                    <!-- Conversation Thread Panel -->
+                    <div v-if="openConversations[item.id]" class="mt-2 border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-amber-500 animate-pulse"></span>
+                                <span class="font-bold text-slate-900 text-xs">Milestone & Deadline Discussion</span>
+                                <span class="text-[10px] text-slate-500">({{ getConversation(item).length }} message{{ getConversation(item).length === 1 ? '' : 's' }})</span>
+                            </div>
+                            <button @click="openConversations[item.id] = false" class="text-slate-400 hover:text-slate-600 text-xs font-semibold">
+                                Collapse ✕
+                            </button>
                         </div>
-                        <p class="text-slate-800 font-medium whitespace-pre-line">{{ item.staffReply }}</p>
-                    </div>
 
-                    <!-- Interactive Reply Box -->
-                    <div v-if="activeReplyItemId === item.id" class="pt-1 space-y-2 bg-slate-50 p-2.5 border border-slate-200">
-                        <label class="block text-[11px] font-bold text-gray-700">Write Status / Reply:</label>
-                        <textarea 
-                            v-model="replyText"
-                            rows="2"
-                            placeholder="Type progress update or remark..."
-                            class="w-full text-xs border border-gray-300 p-2 focus:border-amber-600 focus:ring-1 focus:ring-amber-600 bg-white"
-                        ></textarea>
-                        <div class="flex items-center justify-end gap-1.5">
-                            <button 
-                                type="button" 
-                                @click="activeReplyItemId = null"
-                                class="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 transition"
+                        <!-- Thread Messages -->
+                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            <div v-if="getConversation(item).length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+                                No messages in this discussion yet. Start the conversation below.
+                            </div>
+                            <div 
+                                v-for="(msg, mIdx) in getConversation(item)" 
+                                :key="msg.id || mIdx"
+                                class="flex items-start gap-2.5"
+                                :class="isMyMessage(msg) ? 'flex-row-reverse' : 'flex-row'"
                             >
-                                Cancel
-                            </button>
-                            <button 
-                                type="button"
-                                @click="submitReply(item)"
-                                :disabled="isSubmittingReply"
-                                class="px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 transition disabled:opacity-50"
-                            >
-                                {{ isSubmittingReply ? 'Saving...' : 'Post Reply' }}
-                            </button>
+                                <div 
+                                    class="w-7 h-7 shrink-0 text-[10px] font-bold flex items-center justify-center text-white overflow-hidden shadow-2xs"
+                                    :class="isMyMessage(msg) ? 'bg-amber-600' : (msg.sender_role === 'staff' ? 'bg-emerald-700' : 'bg-slate-700')"
+                                >
+                                    <img v-if="msg.sender_photo" :src="msg.sender_photo" class="w-full h-full object-cover" />
+                                    <span v-else>{{ getInitials(msg.sender_name) }}</span>
+                                </div>
+
+                                <div 
+                                    class="max-w-[85%] sm:max-w-[75%] p-2.5 text-xs shadow-2xs border"
+                                    :class="isMyMessage(msg) ? 'bg-amber-600 border-amber-700 text-white' : 'bg-white border-slate-200 text-slate-900'"
+                                >
+                                    <div class="flex items-center gap-2 mb-1 text-[10px]" :class="isMyMessage(msg) ? 'justify-end text-amber-100' : 'justify-start text-slate-500'">
+                                        <strong class="font-bold" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-900'">
+                                            {{ isMyMessage(msg) ? 'You' : msg.sender_name }}
+                                        </strong>
+                                        <span class="px-1 py-0.2 text-[9px] font-bold uppercase tracking-wider" :class="isMyMessage(msg) ? 'bg-amber-800/60 text-amber-100' : (msg.sender_role === 'staff' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-800')">
+                                            {{ msg.sender_role || 'user' }}
+                                        </span>
+                                        <span v-if="msg.created_at" class="font-normal" :class="isMyMessage(msg) ? 'text-amber-200' : 'text-slate-400'">{{ msg.created_at }}</span>
+                                    </div>
+                                    <p class="whitespace-pre-line leading-relaxed break-words" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">{{ msg.message }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Input -->
+                        <div class="pt-2 border-t border-slate-200 space-y-2">
+                            <textarea 
+                                v-model="conversationInputs[item.id]"
+                                @keydown="handleKeyDown($event, item)"
+                                rows="2"
+                                :placeholder="`Type milestone status, deadline update, or instructions to ${staff.name}... (Press Enter to send)`"
+                                class="w-full text-xs border border-slate-300 p-2.5 focus:border-amber-600 focus:ring-1 focus:ring-amber-600 bg-white placeholder:text-slate-400"
+                            ></textarea>
+                            <div class="flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                                <span class="text-slate-500 text-[10px]">💡 <kbd class="px-1 py-0.5 bg-slate-200 text-slate-700">Enter</kbd> to send • <kbd class="px-1 py-0.5 bg-slate-200 text-slate-700">Shift+Enter</kbd> for new line</span>
+                                <button 
+                                    type="button" 
+                                    @click="sendConversationMessage(item)"
+                                    :disabled="isSendingMessage[item.id] || !(conversationInputs[item.id] && conversationInputs[item.id].trim())"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 transition disabled:opacity-50 shadow-2xs"
+                                >
+                                    <svg v-if="isSendingMessage[item.id]" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                    <span>{{ isSendingMessage[item.id] ? 'Sending...' : 'Send Message' }}</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -754,60 +968,102 @@ const handleDeleteItem = async (item) => {
                             </p>
                         </div>
 
-                        <!-- Actions: Reply & Delete -->
+                        <!-- Actions: Conversation & Delete -->
                         <div class="flex items-center gap-1.5 shrink-0">
                             <button 
-                                @click="openReply(item)"
-                                class="px-2 py-1 text-xs font-semibold transition border"
-                                :class="activeReplyItemId === item.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-300'"
-                                title="Reply / Note"
+                                @click="toggleConversation(item)"
+                                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold transition border"
+                                :class="openConversations[item.id] ? 'bg-slate-900 text-white border-slate-900' : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-300'"
+                                title="Open Conversation Thread"
                             >
-                                💬 {{ item.staffReply ? 'Edit' : 'Reply' }}
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                                <span>Discussion</span>
+                                <span class="px-1.5 py-0.2 text-[10px] font-bold" :class="openConversations[item.id] ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-800'">
+                                    {{ getConversation(item).length }}
+                                </span>
                             </button>
                             <button 
-                                @click="handleDeleteItem(item)"
+                                @click="promptDeleteNote(item)"
                                 class="text-gray-400 hover:text-rose-600 p-1 transition"
-                                title="Delete Directive"
+                                title="Delete Directive / Note"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Existing Reply -->
-                    <div v-if="item.staffReply" class="bg-emerald-50 border border-emerald-200 p-2 text-xs space-y-0.5">
-                        <div class="flex items-center justify-between text-[10px] text-emerald-800 font-bold">
-                            <span>💬 Staff Reply</span>
-                            <span v-if="item.staffRepliedAt">{{ item.staffRepliedAt }}</span>
+                    <!-- Conversation Thread Panel -->
+                    <div v-if="openConversations[item.id]" class="mt-2 border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-blue-500 animate-pulse"></span>
+                                <span class="font-bold text-slate-900 text-xs">Directive Follow-up & Discussion</span>
+                                <span class="text-[10px] text-slate-500">({{ getConversation(item).length }} message{{ getConversation(item).length === 1 ? '' : 's' }})</span>
+                            </div>
+                            <button @click="openConversations[item.id] = false" class="text-slate-400 hover:text-slate-600 text-xs font-semibold">
+                                Collapse ✕
+                            </button>
                         </div>
-                        <p class="text-slate-800 font-medium whitespace-pre-line">{{ item.staffReply }}</p>
-                    </div>
 
-                    <!-- Interactive Reply Box -->
-                    <div v-if="activeReplyItemId === item.id" class="pt-1 space-y-2 bg-slate-50 p-2.5 border border-slate-200">
-                        <label class="block text-[11px] font-bold text-gray-700">Write Directive Response / Note:</label>
-                        <textarea 
-                            v-model="replyText"
-                            rows="2"
-                            placeholder="Type response to directive..."
-                            class="w-full text-xs border border-gray-300 p-2 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
-                        ></textarea>
-                        <div class="flex items-center justify-end gap-1.5">
-                            <button 
-                                type="button" 
-                                @click="activeReplyItemId = null"
-                                class="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 transition"
+                        <!-- Thread Messages -->
+                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            <div v-if="getConversation(item).length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+                                No messages in this discussion yet. Start the conversation below.
+                            </div>
+                            <div 
+                                v-for="(msg, mIdx) in getConversation(item)" 
+                                :key="msg.id || mIdx"
+                                class="flex items-start gap-2.5"
+                                :class="isMyMessage(msg) ? 'flex-row-reverse' : 'flex-row'"
                             >
-                                Cancel
-                            </button>
-                            <button 
-                                type="button"
-                                @click="submitReply(item)"
-                                :disabled="isSubmittingReply"
-                                class="px-3 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50"
-                            >
-                                {{ isSubmittingReply ? 'Saving...' : 'Post Reply' }}
-                            </button>
+                                <div 
+                                    class="w-7 h-7 shrink-0 text-[10px] font-bold flex items-center justify-center text-white overflow-hidden shadow-2xs"
+                                    :class="isMyMessage(msg) ? 'bg-blue-600' : (msg.sender_role === 'staff' ? 'bg-emerald-700' : 'bg-slate-700')"
+                                >
+                                    <img v-if="msg.sender_photo" :src="msg.sender_photo" class="w-full h-full object-cover" />
+                                    <span v-else>{{ getInitials(msg.sender_name) }}</span>
+                                </div>
+
+                                <div 
+                                    class="max-w-[85%] sm:max-w-[75%] p-2.5 text-xs shadow-2xs border"
+                                    :class="isMyMessage(msg) ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-slate-200 text-slate-900'"
+                                >
+                                    <div class="flex items-center gap-2 mb-1 text-[10px]" :class="isMyMessage(msg) ? 'justify-end text-blue-100' : 'justify-start text-slate-500'">
+                                        <strong class="font-bold" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-900'">
+                                            {{ isMyMessage(msg) ? 'You' : msg.sender_name }}
+                                        </strong>
+                                        <span class="px-1 py-0.2 text-[9px] font-bold uppercase tracking-wider" :class="isMyMessage(msg) ? 'bg-blue-800/60 text-blue-100' : (msg.sender_role === 'staff' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-800')">
+                                            {{ msg.sender_role || 'user' }}
+                                        </span>
+                                        <span v-if="msg.created_at" class="font-normal" :class="isMyMessage(msg) ? 'text-blue-200' : 'text-slate-400'">{{ msg.created_at }}</span>
+                                    </div>
+                                    <p class="whitespace-pre-line leading-relaxed break-words" :class="isMyMessage(msg) ? 'text-white' : 'text-slate-800'">{{ msg.message }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Input -->
+                        <div class="pt-2 border-t border-slate-200 space-y-2">
+                            <textarea 
+                                v-model="conversationInputs[item.id]"
+                                @keydown="handleKeyDown($event, item)"
+                                rows="2"
+                                :placeholder="`Type a directive note or instruction to ${staff.name}... (Press Enter to send)`"
+                                class="w-full text-xs border border-slate-300 p-2.5 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white placeholder:text-slate-400"
+                            ></textarea>
+                            <div class="flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                                <span class="text-slate-500 text-[10px]">💡 <kbd class="px-1 py-0.5 bg-slate-200 text-slate-700">Enter</kbd> to send • <kbd class="px-1 py-0.5 bg-slate-200 text-slate-700">Shift+Enter</kbd> for new line</span>
+                                <button 
+                                    type="button" 
+                                    @click="sendConversationMessage(item)"
+                                    :disabled="isSendingMessage[item.id] || !(conversationInputs[item.id] && conversationInputs[item.id].trim())"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50 shadow-2xs"
+                                >
+                                    <svg v-if="isSendingMessage[item.id]" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                    <span>{{ isSendingMessage[item.id] ? 'Sending...' : 'Post Message' }}</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -1113,6 +1369,104 @@ const handleDeleteItem = async (item) => {
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- ========================================== -->
+        <!-- MODAL: DEDICATED CONFIRMATION DIALOG       -->
+        <!-- ========================================== -->
+        <Teleport to="body">
+            <div 
+                v-if="confirmModal.show" 
+                class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+                @click.self="closeConfirmModal"
+                role="dialog"
+                aria-modal="true"
+            >
+                <div class="bg-white max-w-md w-full border border-slate-200 shadow-2xl p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-150">
+                    
+                    <!-- Header with Icon -->
+                    <div class="flex items-start gap-3.5">
+                        <div class="w-10 h-10 bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 font-bold">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <div class="space-y-1 min-w-0 flex-1">
+                            <h3 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">
+                                {{ confirmModal.title }}
+                            </h3>
+                            <p class="text-xs text-slate-500 leading-relaxed">
+                                {{ confirmModal.message }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Target Item Details Preview Box -->
+                    <div v-if="confirmModal.item" class="bg-slate-50 border border-slate-200 p-3 space-y-1.5 text-xs">
+                        <div v-if="confirmModal.type === 'assignment'" class="space-y-1">
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Project:</span>
+                                <span class="font-bold text-slate-900 text-right truncate max-w-[220px]">{{ confirmModal.item.projectName || confirmModal.item.title }}</span>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Staff:</span>
+                                <span class="font-bold text-slate-900">{{ staff.name }}</span>
+                            </div>
+                            <div v-if="confirmModal.item.roleInProject" class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Assigned Role:</span>
+                                <span class="font-bold text-slate-700">{{ confirmModal.item.roleInProject }}</span>
+                            </div>
+                        </div>
+
+                        <div v-else-if="confirmModal.type === 'deadline'" class="space-y-1">
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Milestone:</span>
+                                <span class="font-bold text-slate-900 text-right truncate max-w-[220px]">{{ confirmModal.item.title }}</span>
+                            </div>
+                            <div v-if="confirmModal.item.targetDeadline" class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Target Due Date:</span>
+                                <span class="font-bold text-amber-700">{{ formatDate(confirmModal.item.targetDeadline) }}</span>
+                            </div>
+                            <div v-if="confirmModal.item.projectName" class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Project:</span>
+                                <span class="font-medium text-slate-700 truncate max-w-[220px]">{{ confirmModal.item.projectName }}</span>
+                            </div>
+                        </div>
+
+                        <div v-else-if="confirmModal.type === 'note'" class="space-y-1">
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-500 font-semibold uppercase tracking-wider">Subject:</span>
+                                <span class="font-bold text-slate-900 text-right truncate max-w-[220px]">{{ confirmModal.item.title }}</span>
+                            </div>
+                            <div v-if="confirmModal.item.note" class="text-[11px] text-slate-600 italic line-clamp-2 pt-0.5">
+                                "{{ confirmModal.item.note }}"
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                        <button 
+                            type="button" 
+                            @click="closeConfirmModal"
+                            :disabled="confirmModal.isProcessing"
+                            class="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="button"
+                            @click="executeConfirmAction"
+                            :disabled="confirmModal.isProcessing"
+                            class="px-4 py-1.5 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                            :class="confirmModal.confirmButtonClass"
+                        >
+                            <svg v-if="confirmModal.isProcessing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                            <span>{{ confirmModal.isProcessing ? 'Processing...' : confirmModal.confirmButtonText }}</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </Teleport>

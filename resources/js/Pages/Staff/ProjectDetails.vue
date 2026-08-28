@@ -228,7 +228,7 @@ const downloadAllDocs = () => {
         <div class="flex">
             <Sidebar class="print:hidden" activeTab="findproject" @tab-change="navigateToTab" @collapse-change="handleCollapseChange" />
 
-            <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-200', sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64']">
+            <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-200', sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-56']">
 
                 <!-- Compact Dashboard Top Bar -->
                 <header class="bg-white border-b border-slate-200 sticky top-0 z-10 print:hidden">

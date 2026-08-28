@@ -103,10 +103,20 @@ const coverPhotoPresets = [
     },
 ];
 
-// Cover state
-const coverMode = ref(localStorage.getItem('meo_cover_mode') || 'palette');
-const selectedCoverId = ref(localStorage.getItem('meo_cover_id') || 'meo-crimson');
-const customCoverDataUrl = ref(localStorage.getItem('meo_cover_custom_data') || null);
+// Cover state with user-scoped localStorage
+const coverModeKey = computed(() => `meo_cover_mode_${user.value?.id || 'guest'}`);
+const coverIdKey = computed(() => `meo_cover_id_${user.value?.id || 'guest'}`);
+const coverCustomKey = computed(() => `meo_cover_custom_${user.value?.id || 'guest'}`);
+
+const coverMode = ref('palette');
+const selectedCoverId = ref('meo-crimson');
+const customCoverDataUrl = ref(null);
+
+const initCoverState = () => {
+    coverMode.value = localStorage.getItem(coverModeKey.value) || localStorage.getItem('meo_cover_mode') || 'palette';
+    selectedCoverId.value = localStorage.getItem(coverIdKey.value) || localStorage.getItem('meo_cover_id') || 'meo-crimson';
+    customCoverDataUrl.value = localStorage.getItem(coverCustomKey.value) || localStorage.getItem('meo_cover_custom_data') || null;
+};
 
 const currentCoverStyle = computed(() => {
     if (coverMode.value === 'custom-photo' && customCoverDataUrl.value) {
@@ -140,17 +150,17 @@ const currentCoverClass = computed(() => {
 const selectPalette = (id) => {
     coverMode.value = 'palette';
     selectedCoverId.value = id;
-    localStorage.setItem('meo_cover_mode', 'palette');
-    localStorage.setItem('meo_cover_id', id);
+    localStorage.setItem(coverModeKey.value, 'palette');
+    localStorage.setItem(coverIdKey.value, id);
     showToast('Cover palette updated!', 'success');
 };
 
 const selectPhotoPreset = (id) => {
     coverMode.value = 'preset-photo';
     selectedCoverId.value = id;
-    localStorage.setItem('meo_cover_mode', 'preset-photo');
-    localStorage.setItem('meo_cover_id', id);
-    showToast('Cover photo updated!', 'success');
+    localStorage.setItem(coverModeKey.value, 'preset-photo');
+    localStorage.setItem(coverIdKey.value, id);
+    showToast('Cover photo preset applied!', 'success');
 };
 
 const triggerCoverUpload = () => {
@@ -176,8 +186,8 @@ const handleCoverPhotoUpload = (e) => {
         const dataUrl = event.target.result;
         customCoverDataUrl.value = dataUrl;
         coverMode.value = 'custom-photo';
-        localStorage.setItem('meo_cover_mode', 'custom-photo');
-        localStorage.setItem('meo_cover_custom_data', dataUrl);
+        localStorage.setItem(coverModeKey.value, 'custom-photo');
+        localStorage.setItem(coverCustomKey.value, dataUrl);
         showToast('Custom cover photo uploaded successfully!', 'success');
     };
     reader.readAsDataURL(file);
@@ -189,7 +199,7 @@ const handleCoverPhotoUpload = (e) => {
 
 const removeCustomCover = () => {
     customCoverDataUrl.value = null;
-    localStorage.removeItem('meo_cover_custom_data');
+    localStorage.removeItem(coverCustomKey.value);
     selectPalette('meo-crimson');
     showToast('Custom cover removed. Reverted to default palette.', 'success');
 };
@@ -198,33 +208,83 @@ const removeCustomCover = () => {
 // User Bio, Headline, Skills & Details State
 // ==========================================
 const bioKey = computed(() => `meo_user_bio_${user.value?.id || 'guest'}`);
-const defaultBioData = {
-    headline: 'Municipal Technical Officer • Project Oversight & Quality Assurance',
-    bioText: 'Dedicated Municipal Engineering Office technical personnel focused on public infrastructure monitoring, quality inspection, cost estimation, and public safety in Bato, Leyte.',
-    officeLocation: 'Municipal Engineering Office, 2nd Floor, Bato, Leyte',
-    contactPhone: '+63 (053) 568-1234 / Local 104',
-    skills: [
-        'Infrastructure Oversight',
-        'Technical Review',
-        'Project Monitoring',
-        'Municipal Engineering',
-        'AutoCAD & Estimation',
-        'Field Inspections',
-        'Safety Compliance',
-    ],
+
+const getDefaultBioData = () => {
+    const userRole = role.value;
+    const userName = user.value?.name || 'Technical Personnel';
+    const userEmail = user.value?.email || 'opol.meo@gmail.com';
+    
+    if (userRole === 'superadmin') {
+        return {
+            headline: 'Super Administrator • Municipal System Governance & Infrastructure Management',
+            bioText: `Authorized Super Administrator overseeing the Municipal Engineering Office system architecture, user security clearances, administrative privileges, and infrastructure analytics for the Municipality of Opol.`,
+            officeLocation: 'Municipal Engineering Office, Executive Division, Opol, Misamis Oriental',
+            contactPhone: userEmail,
+            skills: [
+                'System Administration',
+                'Infrastructure Governance',
+                'User Clearances',
+                'Project Auditing',
+                'Database Oversight',
+                'Security Compliance',
+            ],
+        };
+    }
+    if (userRole === 'admin') {
+        return {
+            headline: 'Municipal Engineer & Administrator • Project Operations & Planning',
+            bioText: `Municipal Engineering Office administrator directing project planning, technical evaluations, contractor coordination, milestone tracking, and municipal public works in the Municipality of Opol.`,
+            officeLocation: 'Municipal Engineering Office, 2nd Floor, Municipal Hall, Opol, Misamis Oriental',
+            contactPhone: userEmail,
+            skills: [
+                'Project Planning',
+                'Technical Review',
+                'Staff Oversight',
+                'Procurement & Bidding',
+                'Civil Works Inspection',
+                'Budget Allocation',
+            ],
+        };
+    }
+    return {
+        headline: 'MEO Technical Personnel • Field Operations & Quality Assurance',
+        bioText: `Dedicated Municipal Engineering Office technical personnel focused on infrastructure monitoring, field inspections, quantity surveying, milestone validation, and technical documentation in the Municipality of Opol.`,
+        officeLocation: 'Municipal Engineering Office, Operations Unit, Opol, Misamis Oriental',
+        contactPhone: userEmail,
+        skills: [
+            'Field Inspections',
+            'Project Monitoring',
+            'Technical Reporting',
+            'Quantity Surveying',
+            'AutoCAD & Estimation',
+            'Quality Control',
+        ],
+    };
 };
 
-const userBioData = ref({ ...defaultBioData });
-const bioEditForm = ref({ ...defaultBioData });
+const userBioData = ref(getDefaultBioData());
+const bioEditForm = ref(getDefaultBioData());
 const newSkillInput = ref('');
+const inlineSkillInput = ref('');
+const isAddingInlineSkill = ref(false);
 
 const loadBioData = () => {
     try {
+        const defaults = getDefaultBioData();
         const saved = localStorage.getItem(bioKey.value);
         if (saved) {
-            userBioData.value = JSON.parse(saved);
+            const parsed = JSON.parse(saved);
+            userBioData.value = {
+                ...defaults,
+                ...parsed,
+                skills: Array.isArray(parsed.skills) && parsed.skills.length > 0 ? parsed.skills : defaults.skills,
+            };
+        } else {
+            userBioData.value = { ...defaults };
         }
-    } catch (e) {}
+    } catch (e) {
+        userBioData.value = getDefaultBioData();
+    }
 };
 
 const openBioModal = () => {
@@ -244,6 +304,32 @@ const removeSkillTag = (index) => {
     bioEditForm.value.skills.splice(index, 1);
 };
 
+const addInlineSkill = () => {
+    const trimmed = inlineSkillInput.value.trim();
+    if (trimmed && !userBioData.value.skills.includes(trimmed)) {
+        userBioData.value.skills.push(trimmed);
+        localStorage.setItem(bioKey.value, JSON.stringify(userBioData.value));
+        showToast(`Added "${trimmed}" to specializations!`, 'success');
+    }
+    inlineSkillInput.value = '';
+    isAddingInlineSkill.value = false;
+};
+
+const removeSkillDirect = (index) => {
+    const removed = userBioData.value.skills[index];
+    userBioData.value.skills.splice(index, 1);
+    localStorage.setItem(bioKey.value, JSON.stringify(userBioData.value));
+    showToast(`Removed skill tag.`, 'success');
+};
+
+const resetBioToDefaults = () => {
+    const defaults = getDefaultBioData();
+    bioEditForm.value = JSON.parse(JSON.stringify(defaults));
+    userBioData.value = JSON.parse(JSON.stringify(defaults));
+    localStorage.removeItem(bioKey.value);
+    showToast('Bio details reset to role default values.', 'success');
+};
+
 const saveBioData = () => {
     userBioData.value = JSON.parse(JSON.stringify(bioEditForm.value));
     localStorage.setItem(bioKey.value, JSON.stringify(userBioData.value));
@@ -252,6 +338,7 @@ const saveBioData = () => {
 };
 
 onMounted(() => {
+    initCoverState();
     loadBioData();
 });
 
@@ -531,7 +618,7 @@ const handleSidebarTabChange = (tab) => {
         />
 
         <!-- Main Content Area -->
-        <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64']">
+        <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-56']">
             
             <!-- Floating Glass Header Bar -->
             <header class="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 shadow-2xs">
@@ -787,7 +874,7 @@ const handleSidebarTabChange = (tab) => {
                                         </div>
                                         <h3 class="text-xs font-bold uppercase tracking-wider text-slate-900">Official Profile Details</h3>
                                     </div>
-                                    <button type="button" @click="openBioModal" class="text-[11px] font-bold text-red-700 hover:underline">Edit</button>
+                                    <button type="button" @click="openBioModal" class="text-[11px] font-bold text-red-700 hover:underline cursor-pointer">Edit Details</button>
                                 </div>
 
                                 <div class="space-y-3 text-xs text-slate-600">
@@ -795,9 +882,9 @@ const handleSidebarTabChange = (tab) => {
                                         <div class="h-8 w-8 rounded-lg bg-white shadow-2xs text-red-700 flex items-center justify-center shrink-0">
                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                                         </div>
-                                        <div>
+                                        <div class="min-w-0 flex-1">
                                             <p class="text-[10px] text-slate-400 uppercase font-bold">Assigned Position</p>
-                                            <p class="font-bold text-slate-800">{{ user?.position || 'Technical Personnel' }}</p>
+                                            <p class="font-bold text-slate-800 truncate">{{ user?.position || roleLabel }}</p>
                                         </div>
                                     </div>
 
@@ -805,20 +892,31 @@ const handleSidebarTabChange = (tab) => {
                                         <div class="h-8 w-8 rounded-lg bg-white shadow-2xs text-blue-700 flex items-center justify-center shrink-0">
                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
                                         </div>
-                                        <div>
+                                        <div class="min-w-0 flex-1">
                                             <p class="text-[10px] text-slate-400 uppercase font-bold">Office Unit / Desk</p>
-                                            <p class="font-bold text-slate-800">{{ userBioData.officeLocation }}</p>
+                                            <p class="font-bold text-slate-800 truncate">{{ userBioData.officeLocation || 'Municipal Engineering Office, Opol' }}</p>
                                         </div>
                                     </div>
 
-                                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center gap-3">
-                                        <div class="h-8 w-8 rounded-lg bg-white shadow-2xs text-purple-700 flex items-center justify-center shrink-0">
-                                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-3">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <div class="h-8 w-8 rounded-lg bg-white shadow-2xs text-purple-700 flex items-center justify-center shrink-0">
+                                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <p class="text-[10px] text-slate-400 uppercase font-bold">Contact Channel</p>
+                                                <p class="font-bold text-slate-800 truncate">{{ userBioData.contactPhone || user?.email }}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p class="text-[10px] text-slate-400 uppercase font-bold">Contact Number</p>
-                                            <p class="font-bold text-slate-800">{{ userBioData.contactPhone }}</p>
-                                        </div>
+                                        <button
+                                            type="button"
+                                            @click="copyEmail"
+                                            class="shrink-0 p-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50 shadow-2xs transition"
+                                            title="Copy Contact"
+                                        >
+                                            <svg v-if="!emailCopied" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                            <svg v-else class="h-3.5 w-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -826,17 +924,56 @@ const handleSidebarTabChange = (tab) => {
                             <!-- Specialization Tags Card -->
                             <div class="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-2xs space-y-3.5">
                                 <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-900">Specialization & Skills</h3>
-                                    <button type="button" @click="openBioModal" class="text-[10px] font-bold text-slate-400 hover:text-red-700">Add / Remove</button>
-                                </div>
-                                <div class="flex flex-wrap gap-2">
-                                    <span
-                                        v-for="skill in userBioData.skills"
-                                        :key="skill"
-                                        class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 text-xs font-semibold hover:bg-red-50 hover:text-red-700 transition"
+                                    <div class="flex items-center gap-2">
+                                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-900">Specialization & Skills</h3>
+                                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ userBioData.skills.length }}</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        @click="isAddingInlineSkill = !isAddingInlineSkill"
+                                        class="text-[11px] font-bold text-red-700 hover:underline cursor-pointer"
                                     >
-                                        {{ skill }}
-                                    </span>
+                                        {{ isAddingInlineSkill ? 'Cancel' : '+ Add Skill' }}
+                                    </button>
+                                </div>
+
+                                <!-- Inline Add Skill Form -->
+                                <div v-if="isAddingInlineSkill" class="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 animate-in fade-in duration-150">
+                                    <input
+                                        v-model="inlineSkillInput"
+                                        type="text"
+                                        placeholder="Skill tag name (e.g. AutoCAD)..."
+                                        class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-900 outline-none focus:border-red-600 bg-white"
+                                        @keyup.enter="addInlineSkill"
+                                    />
+                                    <button
+                                        type="button"
+                                        @click="addInlineSkill"
+                                        class="px-3 py-1.5 rounded-lg bg-red-700 text-white text-xs font-bold hover:bg-red-800 transition cursor-pointer"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+
+                                <div class="flex flex-wrap gap-2">
+                                    <div
+                                        v-for="(skill, idx) in userBioData.skills"
+                                        :key="skill"
+                                        class="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 text-xs font-semibold hover:bg-red-50 hover:text-red-700 transition"
+                                    >
+                                        <span>{{ skill }}</span>
+                                        <button
+                                            type="button"
+                                            @click="removeSkillDirect(idx)"
+                                            class="text-slate-400 hover:text-rose-600 transition"
+                                            title="Remove skill"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                    <div v-if="userBioData.skills.length === 0" class="text-xs text-slate-400 italic">
+                                        No specializations added yet. Click "+ Add Skill" above to add your engineering skills.
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -868,10 +1005,10 @@ const handleSidebarTabChange = (tab) => {
 
                                 <div class="space-y-3">
                                     <h4 class="text-sm font-extrabold text-slate-900">
-                                        {{ userBioData.headline }}
+                                        {{ userBioData.headline || 'Municipal Technical Officer' }}
                                     </h4>
                                     <p class="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                                        {{ userBioData.bioText }}
+                                        {{ userBioData.bioText || 'No professional summary provided. Click "Edit Bio" to add your responsibilities and background.' }}
                                     </p>
                                 </div>
                             </div>
@@ -895,7 +1032,7 @@ const handleSidebarTabChange = (tab) => {
                                     <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
                                         <p class="text-[10px] uppercase font-bold text-slate-400">Authentication</p>
                                         <p class="font-bold text-emerald-700 text-sm">Encrypted Session</p>
-                                        <p class="text-[11px] text-slate-500">Official Municipal Engineering Portal identity.</p>
+                                        <p class="text-[11px] text-slate-500">Official Municipal Engineering Portal identity (ID #{{ user?.id }}).</p>
                                     </div>
                                 </div>
                             </div>
@@ -909,7 +1046,7 @@ const handleSidebarTabChange = (tab) => {
                                 >
                                     <svg class="h-5 w-5 text-slate-500 group-hover:text-red-700 mb-2 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                                     <p class="text-xs font-bold text-slate-800 group-hover:text-red-700">Edit Bio</p>
-                                    <p class="text-[11px] text-slate-400 mt-0.5">Headline & skills</p>
+                                    <p class="text-[11px] text-slate-400 mt-0.5">Headline & details</p>
                                 </button>
 
                                 <button
@@ -1288,7 +1425,7 @@ const handleSidebarTabChange = (tab) => {
                             <textarea
                                 v-model="bioEditForm.bioText"
                                 rows="3"
-                                placeholder="Briefly describe your municipal engineering responsibilities and background..."
+                                placeholder="Briefly describe your municipal engineering responsibilities, tasks, and background..."
                                 class="w-full p-3 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 shadow-2xs focus:border-red-600 focus:ring-2 focus:ring-red-600/20 outline-none transition resize-none"
                             ></textarea>
                         </div>
@@ -1302,19 +1439,19 @@ const handleSidebarTabChange = (tab) => {
                                 <input
                                     v-model="bioEditForm.officeLocation"
                                     type="text"
-                                    placeholder="e.g. 2nd Floor, Engineering Office"
+                                    placeholder="e.g. Municipal Engineering Office, Opol"
                                     class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 shadow-2xs focus:border-red-600 focus:ring-2 focus:ring-red-600/20 outline-none transition"
                                 />
                             </div>
 
                             <div class="space-y-1.5">
                                 <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                    Contact / Phone Extension
+                                    Contact Channel / Phone / Email
                                 </label>
                                 <input
                                     v-model="bioEditForm.contactPhone"
                                     type="text"
-                                    placeholder="e.g. +63 (053) 568-1234"
+                                    placeholder="e.g. contact number or email address"
                                     class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 shadow-2xs focus:border-red-600 focus:ring-2 focus:ring-red-600/20 outline-none transition"
                                 />
                             </div>
@@ -1331,7 +1468,7 @@ const handleSidebarTabChange = (tab) => {
                                 <input
                                     v-model="newSkillInput"
                                     type="text"
-                                    placeholder="Add a new skill tag (e.g. Road Construction, Estimating)..."
+                                    placeholder="Add a new skill tag (e.g. Road Inspection, Estimation, AutoCAD)..."
                                     class="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 shadow-2xs focus:border-red-600 focus:ring-2 focus:ring-red-600/20 outline-none transition"
                                     @keyup.enter="addSkillTag"
                                 />
@@ -1366,21 +1503,30 @@ const handleSidebarTabChange = (tab) => {
                     </div>
 
                     <!-- Modal Footer -->
-                    <div class="px-6 py-3.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2.5">
+                    <div class="px-6 py-3.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between gap-2.5">
                         <button
                             type="button"
-                            @click="showBioModal = false"
-                            class="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+                            @click="resetBioToDefaults"
+                            class="text-xs font-semibold text-slate-500 hover:text-red-700 hover:underline cursor-pointer"
                         >
-                            Cancel
+                            Reset to Role Defaults
                         </button>
-                        <button
-                            type="button"
-                            @click="saveBioData"
-                            class="px-5 py-2 text-xs font-bold text-white bg-red-700 hover:bg-red-800 rounded-xl shadow-xs transition cursor-pointer"
-                        >
-                            Save Bio & Details
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                @click="showBioModal = false"
+                                class="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                @click="saveBioData"
+                                class="px-5 py-2 text-xs font-bold text-white bg-red-700 hover:bg-red-800 rounded-xl shadow-xs transition cursor-pointer"
+                            >
+                                Save Bio & Details
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

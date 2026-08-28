@@ -1084,12 +1084,27 @@ onUnmounted(() => {
                     </div>
                     <div>
                         <div class="footer-name">Municipal Engineering Office</div>
-                        <div class="footer-sub">Republic of the Philippines</div>
+                        <div class="footer-sub">Local Government of Opol, Misamis Oriental - Republic of the Philippines</div>
                     </div>
                 </div>
                 <div class="footer-center">
                     <p>Municipal Hall of Opol, Misamis Oriental, Engineering Department</p>
-                    <p>For public inquiries and project concerns: Mon–Fri, 8:00 AM – 5:00 PM</p>
+                    <div class="footer-contacts">
+                        <a href="https://www.facebook.com" target="_blank" rel="noopener noreferrer" class="footer-contact-link" title="Official Facebook Page">
+                            <svg class="footer-contact-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                            </svg>
+                            <span>Municipal Engineering Office - LGU Opol</span>
+                        </a>
+                        <span class="footer-contact-divider">•</span>
+                        <a href="mailto:engineeringopol@gmail.com" class="footer-contact-link" title="Official Gmail Account">
+                            <svg class="footer-contact-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                            <span>engineeringopol@gmail.com</span>
+                        </a>
+                    </div>
                 </div>
                 <div class="footer-right">
                     <span>© 2026 Municipal Engineering Office of Opol. Open Data Portal.</span>
@@ -2984,6 +2999,35 @@ html {
 .footer-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.9); }
 .footer-sub { font-size: 11px; }
 .footer-center { font-size: 12px; text-align: center; line-height: 1.8; }
+.footer-contacts {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+.footer-contact-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.75);
+    text-decoration: none;
+    font-size: 11.5px;
+    transition: color 0.15s ease, transform 0.15s ease;
+}
+.footer-contact-link:hover {
+    color: #ffffff;
+    text-decoration: underline;
+}
+.footer-contact-icon {
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+.footer-contact-divider {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+}
 .footer-right { font-size: 11px; }
 
 /* RESPONSIVE BREAKPOINTS */

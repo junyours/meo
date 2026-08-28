@@ -227,7 +227,7 @@ const navigateToProject = (project) => {
 <template>
     <div class="w-full flex-1 min-h-[calc(100vh-12rem)] bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col font-sans">
         <!-- Fixed Search and Filter Section -->
-        <div class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-5 py-4 shrink-0">
+        <div class="sticky top-0 z-10 bg-white/95 backdrop-blur-md border-b border-slate-200 px-5 py-4 shrink-0">
             
             <!-- Header -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -604,7 +604,7 @@ const navigateToProject = (project) => {
 .sticky {
     position: sticky;
     top: 0;
-    z-index: 40;
+    z-index: 10;
 }
 
 /* Table styles */

@@ -20,6 +20,7 @@ class StaffAssignment extends Model
         'note',
         'staff_reply',
         'staff_replied_at',
+        'conversation',
         'role_in_project',
         'target_deadline',
         'priority',
@@ -31,6 +32,7 @@ class StaffAssignment extends Model
         'target_deadline' => 'date',
         'completed_at' => 'datetime',
         'staff_replied_at' => 'datetime',
+        'conversation' => 'array',
     ];
 
     public function user()

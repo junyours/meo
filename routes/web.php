@@ -7,8 +7,10 @@ use App\Http\Controllers\WelcomeContentController;
 use App\Models\Projects;
 use App\Models\Bulletin;
 use App\Models\WelcomeContent;
+use App\Http\Controllers\AskMeoController;
 use App\Http\Controllers\BulletinController;
 use App\Http\Controllers\ReminderController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\StaffAssignmentController;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Application;
@@ -97,52 +99,11 @@ Route::get('/', function () {
     ]);
 });
 
-Route::get('/ask-meo', function () {
-    return Inertia::render('AskMEO');
-})->name('ask.meo');
-
-Route::post('/ask-meo', function (Request $request) {
-    $base = $request->validate([
-        'fullname' => 'required|string|max:255',
-        'phone' => 'nullable|string|max:50',
-        'phone_na' => 'nullable|boolean',
-        'email' => 'nullable|email|max:255',
-        'email_na' => 'nullable|boolean',
-        'subject' => 'nullable|string|max:255',
-        'message' => 'required|string',
-    ]);
-
-    // If reCAPTCHA secret is configured, verify token from client.
-    $recaptchaSecret = env('RECAPTCHA_SECRET');
-    if ($recaptchaSecret) {
-        $token = $request->input('recaptcha_token') ?: $request->input('g-recaptcha-response');
-        if (! $token) {
-            return back()->withErrors(['recaptcha' => 'reCAPTCHA token missing.'])->withInput();
-        }
-
-        $resp = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-            'secret' => $recaptchaSecret,
-            'response' => $token,
-            'remoteip' => $request->ip(),
-        ]);
-
-        $body = $resp->json();
-        // for v3 expect 'success' and a 'score' between 0.0 and 1.0
-        $scoreThreshold = 0.5; // tweak as needed
-        if (! ($body && isset($body['success']) && $body['success'] === true)) {
-            return back()->withErrors(['recaptcha' => 'reCAPTCHA verification failed.'])->withInput();
-        }
-        if (isset($body['score']) && $body['score'] < $scoreThreshold) {
-            return back()->withErrors(['recaptcha' => 'reCAPTCHA score too low.'])->withInput();
-        }
-    } else {
-        // fallback: require the simple checkbox
-        $request->validate(['not_robot' => 'accepted']);
-    }
-
-    // TODO: persist or send message. For now flash a success message.
-    return back()->with('success', 'Your message was received.');
-})->name('ask.meo.send');
+Route::get('/ask-meo', [AskMeoController::class, 'index'])->name('ask.meo');
+Route::get('/resolve-concern/{token?}', [AskMeoController::class, 'resolvedConcern'])->name('ask.meo.resolved');
+Route::post('/ask-meo', [AskMeoController::class, 'store'])->name('ask.meo.send');
+Route::post('/ask-meo/check-status', [AskMeoController::class, 'checkStatus'])->name('ask.meo.check-status');
+Route::post('/ask-meo/reset', [AskMeoController::class, 'resetSession'])->name('ask.meo.reset');
 
 Route::get('/dashboard', function () {
     if (auth()->user()) {
@@ -183,7 +144,12 @@ Route::middleware('auth')->group(function () {
     Route::put('/staff-assignments/{staffAssignment}', [StaffAssignmentController::class, 'update'])->name('staff-assignments.update');
     Route::patch('/staff-assignments/{staffAssignment}/status', [StaffAssignmentController::class, 'toggleStatus'])->name('staff-assignments.status');
     Route::patch('/staff-assignments/{staffAssignment}/reply', [StaffAssignmentController::class, 'reply'])->name('staff-assignments.reply');
+    Route::post('/staff-assignments/{staffAssignment}/message', [StaffAssignmentController::class, 'sendMessage'])->name('staff-assignments.message');
     Route::delete('/staff-assignments/{staffAssignment}', [StaffAssignmentController::class, 'destroy'])->name('staff-assignments.destroy');
+    Route::get('/inquiries', [AskMeoController::class, 'adminIndex'])->name('inquiries.index');
+    Route::patch('/inquiries/{inquiry}/status', [AskMeoController::class, 'updateStatus'])->name('inquiries.status');
+    Route::delete('/inquiries/{inquiry}', [AskMeoController::class, 'destroy'])->name('inquiries.destroy');
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
 });
 
 // Admin routes

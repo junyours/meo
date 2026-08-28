@@ -1,11 +1,16 @@
 <script setup>
 import { Link, usePage, router } from '@inertiajs/vue3';
-import { computed, onMounted, ref, toRef } from 'vue';
+import { computed, onMounted, onUnmounted, ref, toRef } from 'vue';
+import axios from 'axios';
 
 const props = defineProps({
     activeTab: {
         type: String,
         default: 'dashboard',
+    },
+    inquiries: {
+        type: Array,
+        default: () => [],
     },
 });
 
@@ -14,6 +19,12 @@ const emit = defineEmits(['tab-change', 'collapse-change']);
 const page = usePage();
 const activeTab = toRef(props, 'activeTab');
 const role = computed(() => page.props.auth?.user?.role ?? 'admin');
+const pageInquiries = ref([]);
+
+const pendingInquiriesCount = computed(() => {
+    const list = pageInquiries.value.length ? pageInquiries.value : (props.inquiries?.length ? props.inquiries : (page.props.inquiries || []));
+    return list.filter(i => i.status === 'pending').length;
+});
 
 const STORAGE_KEY = 'meo_sidebar_collapsed';
 const collapsed = ref(localStorage.getItem(STORAGE_KEY) === 'true');
@@ -132,8 +143,30 @@ const roleLabel = computed(() => {
         : role.value.charAt(0).toUpperCase() + role.value.slice(1);
 });
 
-onMounted(() => {
+let inquiriesPollTimer = null;
+
+const syncSidebarInquiries = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    try {
+        const response = await axios.get('/inquiries');
+        if (response.data && Array.isArray(response.data)) {
+            pageInquiries.value = response.data;
+        }
+    } catch (e) {}
+};
+
+onMounted(async () => {
     emit('collapse-change', collapsed.value);
+    await syncSidebarInquiries();
+    if (inquiriesPollTimer) clearInterval(inquiriesPollTimer);
+    inquiriesPollTimer = setInterval(syncSidebarInquiries, 8000);
+});
+
+onUnmounted(() => {
+    if (inquiriesPollTimer) {
+        clearInterval(inquiriesPollTimer);
+        inquiriesPollTimer = null;
+    }
 });
 </script>
 
@@ -154,24 +187,24 @@ onMounted(() => {
     <div v-if="mobileOpen" class="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" @click="closeMobile"></div>
     <aside
         :class="[
-            collapsed ? 'w-72 lg:w-20' : 'w-72 lg:w-64',
+            collapsed ? 'w-64 lg:w-16' : 'w-64 lg:w-56',
             mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
             'fixed inset-y-0 left-0 z-50 flex min-w-0 flex-col overflow-x-hidden overflow-y-auto border-r border-slate-200 bg-white text-slate-900 shadow-sm transition-[width,transform] duration-200'
         ]"
     >
-        <div class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
-            <div class="flex min-w-0 items-center gap-3">
-                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-1.5">
+        <div class="flex items-center justify-between border-b border-slate-200 px-3.5 py-3.5">
+            <div class="flex min-w-0 items-center gap-2.5">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-1.5">
                     <img src="/image/meo_logo2.png" alt="MEO logo" class="h-full w-full object-contain" />
                 </div>
                 <div v-if="!collapsed || mobileOpen" class="min-w-0">
-                    <p class="truncate text-sm font-semibold text-slate-950">MEO Management</p>
-                    <p class="truncate text-xs font-medium text-red-700">{{ roleLabel }} Console</p>
+                    <p class="truncate text-xs font-bold text-slate-950">MEO Management</p>
+                    <p class="truncate text-[11px] font-semibold text-red-700">{{ roleLabel }} Console</p>
                 </div>
             </div>
             <button
                 @click="mobileOpen ? closeMobile() : toggleCollapsed()"
-                class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
                 :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
             >
                 <svg v-if="mobileOpen" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12M18 6L6 18" /></svg>
@@ -184,45 +217,67 @@ onMounted(() => {
             </button>
         </div>
 
-        <nav class="min-w-0 flex-1 space-y-1 overflow-x-hidden px-3 py-4">
+        <nav class="min-w-0 flex-1 space-y-1 overflow-x-hidden px-2.5 py-3">
             <button
                 v-for="tab in tabs"
                 :key="tab.id"
                 @click="emit('tab-change', tab.id); closeMobile()"
                 :title="tab.label"
                 :class="[
-                    collapsed && !mobileOpen ? 'justify-center px-0 lg:justify-center' : 'justify-start px-3',
-                    'group relative flex h-11 w-full min-w-0 items-center gap-3 rounded-lg text-sm font-medium transition-colors duration-200',
+                    collapsed && !mobileOpen ? 'justify-center px-0 lg:justify-center' : 'justify-start px-2.5',
+                    'group relative flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg text-xs font-medium transition-colors duration-200',
                     activeTab === tab.id
                         ? 'bg-red-700 text-white shadow-sm shadow-red-900/10'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
                 ]"
             >
+                <div class="relative shrink-0 flex items-center justify-center">
+                    <span
+                        :class="[activeTab === tab.id ? 'text-white' : 'text-slate-400 group-hover:text-slate-700', 'shrink-0']"
+                        v-html="icons[tab.id]"
+                    ></span>
+                    <!-- Collapsed badge for waiting inquiries -->
+                    <span
+                        v-if="collapsed && !mobileOpen && tab.id === 'messages' && pendingInquiriesCount > 0"
+                        class="absolute -top-1.5 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black text-white shadow-sm ring-2 ring-white animate-pulse"
+                    >
+                        {{ pendingInquiriesCount > 99 ? '99+' : pendingInquiriesCount }}
+                    </span>
+                </div>
+                <span v-if="!collapsed || mobileOpen" class="truncate flex-1 text-left">{{ tab.label }}</span>
+                <!-- Expanded badge for waiting inquiries -->
                 <span
-                    :class="[activeTab === tab.id ? 'text-white' : 'text-slate-400 group-hover:text-slate-700', 'shrink-0']"
-                    v-html="icons[tab.id]"
-                ></span>
-                <span v-if="!collapsed || mobileOpen" class="truncate">{{ tab.label }}</span>
+                    v-if="(!collapsed || mobileOpen) && tab.id === 'messages' && pendingInquiriesCount > 0"
+                    :class="[
+                        activeTab === tab.id 
+                            ? 'bg-amber-400 text-amber-950 font-black' 
+                            : 'bg-amber-100 text-amber-900 font-bold border border-amber-300 animate-pulse',
+                        'ml-auto inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[9px]'
+                    ]"
+                    title="Inquiries waiting for review"
+                >
+                    {{ pendingInquiriesCount }}
+                </span>
             </button>
         </nav>
 
-        <div class="min-w-0 space-y-1 border-t border-slate-200 px-3 py-4">
+        <div class="min-w-0 space-y-1 border-t border-slate-200 px-2.5 py-3">
             <Link
                 href="/profile"
-                :class="[collapsed && !mobileOpen ? 'justify-center px-0 lg:justify-center' : 'justify-start px-3', 'flex h-11 items-center gap-3 rounded-lg text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950']"
+                :class="[collapsed && !mobileOpen ? 'justify-center px-0 lg:justify-center' : 'justify-start px-2.5', 'flex h-10 items-center gap-2.5 rounded-lg text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950']"
                 title="Profile"
                 @click="closeMobile"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10 4a3 3 0 100 6 3 3 0 000-6z" /><path fill-rule="evenodd" d="M2 14s2-4 8-4 8 4 8 4v2H2v-2z" clip-rule="evenodd"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10 4a3 3 0 100 6 3 3 0 000-6z" /><path fill-rule="evenodd" d="M2 14s2-4 8-4 8 4 8 4v2H2v-2z" clip-rule="evenodd"/></svg>
                 <span v-if="!collapsed || mobileOpen" class="truncate">Profile</span>
             </Link>
             <button
                 type="button"
                 @click="showLogoutModal = true; closeMobile()"
-                :class="[collapsed && !mobileOpen ? 'justify-center px-0 lg:justify-center' : 'justify-start px-3', 'flex h-11 w-full items-center gap-3 rounded-lg text-sm font-medium text-red-700 transition hover:bg-red-50 hover:text-red-800']"
+                :class="[collapsed && !mobileOpen ? 'justify-center px-0 lg:justify-center' : 'justify-start px-2.5', 'flex h-10 w-full items-center gap-2.5 rounded-lg text-xs font-medium text-red-700 transition hover:bg-red-50 hover:text-red-800']"
                 title="Logout"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h6a1 1 0 110 2H5v10h5a1 1 0 110 2H4a1 1 0 01-1-1V4z" clip-rule="evenodd"/><path d="M12.293 9.293a1 1 0 011.414 0L16 11.586V7a1 1 0 112 0v8a1 1 0 11-2 0v-4.586l-2.293 2.293a1 1 0 01-1.414-1.414L14.586 10 12.293 7.707a1 1 0 010-1.414z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h6a1 1 0 110 2H5v10h5a1 1 0 110 2H4a1 1 0 01-1-1V4z" clip-rule="evenodd"/><path d="M12.293 9.293a1 1 0 011.414 0L16 11.586V7a1 1 0 112 0v8a1 1 0 11-2 0v-4.586l-2.293 2.293a1 1 0 01-1.414-1.414L14.586 10 12.293 7.707a1 1 0 010-1.414z"/></svg>
                 <span v-if="!collapsed || mobileOpen" class="truncate">Logout</span>
             </button>
         </div>
