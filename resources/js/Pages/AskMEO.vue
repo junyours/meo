@@ -94,6 +94,24 @@ const removePhoto = (index) => {
     if (fileInput.value) fileInput.value.value = '';
 };
 
+const getCancelUrl = () => {
+    try {
+        if (typeof route === 'function' && route().has && route().has('ask.meo.cancel')) {
+            return route('ask.meo.cancel');
+        }
+    } catch (e) {}
+    return '/ask-meo/cancel';
+};
+
+const getWithdrawCancelUrl = () => {
+    try {
+        if (typeof route === 'function' && route().has && route().has('ask.meo.withdraw-cancel')) {
+            return route('ask.meo.withdraw-cancel');
+        }
+    } catch (e) {}
+    return '/ask-meo/withdraw-cancel';
+};
+
 const getSendUrl = () => {
     try {
         if (typeof route === 'function' && route().has && route().has('ask.meo.send')) {
@@ -128,6 +146,87 @@ const getResolvedUrl = (token) => {
         }
     } catch (e) {}
     return `/resolve-concern/${token}`;
+};
+
+// Cancellation Modal & Request State
+const showCancelModal = ref(false);
+const isCancelling = ref(false);
+const isWithdrawingCancel = ref(false);
+const cancelError = ref('');
+const selectedReasonPreset = ref('Issue has been resolved on our own');
+const customCancelReason = ref('');
+
+const presetReasons = [
+    'Issue has been resolved on our own',
+    'Submitted by mistake / duplicate report',
+    'Work / repair already done by community',
+    'No longer needed or applicable',
+    'Other reason (specified below)',
+];
+
+const openCancelModal = () => {
+    cancelError.value = '';
+    selectedReasonPreset.value = 'Issue has been resolved on our own';
+    customCancelReason.value = '';
+    showCancelModal.value = true;
+};
+
+const closeCancelModal = () => {
+    if (isCancelling.value) return;
+    showCancelModal.value = false;
+    cancelError.value = '';
+};
+
+const submitCancellationRequest = async () => {
+    if (!currentInquiry.value?.tracking_token) return;
+
+    let reason = selectedReasonPreset.value;
+    if (customCancelReason.value.trim()) {
+        reason = selectedReasonPreset.value === 'Other reason (specified below)' 
+            ? customCancelReason.value.trim() 
+            : `${selectedReasonPreset.value} — ${customCancelReason.value.trim()}`;
+    }
+
+    isCancelling.value = true;
+    cancelError.value = '';
+
+    try {
+        const response = await axios.post(getCancelUrl(), {
+            tracking_token: currentInquiry.value.tracking_token,
+            cancellation_reason: reason,
+        });
+
+        if (response.data && response.data.success && response.data.inquiry) {
+            currentInquiry.value = response.data.inquiry;
+            showCancelModal.value = false;
+        } else {
+            cancelError.value = response.data?.message || 'Failed to submit cancellation request.';
+        }
+    } catch (err) {
+        cancelError.value = err.response?.data?.message || 'An error occurred while submitting cancellation request.';
+    } finally {
+        isCancelling.value = false;
+    }
+};
+
+const withdrawCancellationRequest = async () => {
+    if (!currentInquiry.value?.tracking_token) return;
+    if (!confirm('Are you sure you want to withdraw your cancellation request and keep this concern active?')) return;
+
+    isWithdrawingCancel.value = true;
+    try {
+        const response = await axios.post(getWithdrawCancelUrl(), {
+            tracking_token: currentInquiry.value.tracking_token,
+        });
+
+        if (response.data && response.data.success && response.data.inquiry) {
+            currentInquiry.value = response.data.inquiry;
+        }
+    } catch (err) {
+        alert(err.response?.data?.message || 'Failed to withdraw cancellation request.');
+    } finally {
+        isWithdrawingCancel.value = false;
+    }
 };
 
 const submitConcern = () => {
@@ -251,7 +350,7 @@ const startRelayNewConcern = () => {
 };
 
 const switchToForm = () => {
-    if (currentInquiry.value && (currentInquiry.value.status === 'resolved' || currentInquiry.value.status === 'declined')) {
+    if (currentInquiry.value && (currentInquiry.value.status === 'resolved' || currentInquiry.value.status === 'declined' || currentInquiry.value.status === 'cancelled')) {
         startRelayNewConcern();
     } else {
         activeTab.value = 'form';
@@ -272,6 +371,20 @@ const statusBadgeConfig = {
         badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
         dotClass: 'bg-emerald-500',
         icon: 'check',
+    },
+    cancel_requested: {
+        label: 'Cancellation Pending Confirmation',
+        sub: 'You have submitted a request to cancel this concern. Awaiting confirmation by MEO staff/admin.',
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+        dotClass: 'bg-rose-500 animate-pulse',
+        icon: 'x-circle',
+    },
+    cancelled: {
+        label: 'Concern Cancelled',
+        sub: 'This concern was cancelled and confirmed by the Municipal Engineering Office.',
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-300',
+        dotClass: 'bg-slate-500',
+        icon: 'ban',
     },
     resolved: {
         label: 'Concern Resolved',
@@ -647,13 +760,25 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                         <!-- Status Alert Card -->
                         <div 
                             class="rounded-2xl border p-5 transition-all shadow-sm"
-                            :class="currentInquiry.status === 'resolved' ? 'bg-blue-50/90 border-blue-300' : (currentInquiry.status === 'accepted' ? 'bg-emerald-50/80 border-emerald-200' : 'bg-amber-50/80 border-amber-200')"
+                            :class="{
+                                'bg-blue-50/90 border-blue-300': currentInquiry.status === 'resolved',
+                                'bg-emerald-50/80 border-emerald-200': currentInquiry.status === 'accepted',
+                                'bg-rose-50/90 border-rose-300': currentInquiry.status === 'cancel_requested',
+                                'bg-slate-100/90 border-slate-300': currentInquiry.status === 'cancelled',
+                                'bg-amber-50/80 border-amber-200': currentInquiry.status === 'pending' || !['resolved', 'accepted', 'cancel_requested', 'cancelled'].includes(currentInquiry.status)
+                            }"
                         >
                             <div class="flex items-start gap-4">
                                 <!-- Status Icon -->
                                 <div 
                                     class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-                                    :class="currentInquiry.status === 'resolved' ? 'bg-blue-600 text-white' : (currentInquiry.status === 'accepted' ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white')"
+                                    :class="{
+                                        'bg-blue-600 text-white': currentInquiry.status === 'resolved',
+                                        'bg-emerald-600 text-white': currentInquiry.status === 'accepted',
+                                        'bg-rose-600 text-white': currentInquiry.status === 'cancel_requested',
+                                        'bg-slate-600 text-white': currentInquiry.status === 'cancelled',
+                                        'bg-amber-500 text-white': currentInquiry.status === 'pending' || !['resolved', 'accepted', 'cancel_requested', 'cancelled'].includes(currentInquiry.status)
+                                    }"
                                 >
                                     <!-- Resolved Double-Check / Trophy Icon -->
                                     <svg v-if="currentInquiry.status === 'resolved'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -662,6 +787,14 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                                     <!-- Accepted Check Icon -->
                                     <svg v-else-if="currentInquiry.status === 'accepted'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <!-- Cancel Requested Icon -->
+                                    <svg v-else-if="currentInquiry.status === 'cancel_requested'" class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <!-- Cancelled Icon -->
+                                    <svg v-else-if="currentInquiry.status === 'cancelled'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                                     </svg>
                                     <!-- Pending Loading Spinner -->
                                     <svg v-else class="w-6 h-6 animate-spin" style="animation-duration: 4s;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -707,11 +840,50 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                                         </p>
                                     </div>
 
+                                    <!-- Cancellation Requested State -->
+                                    <div v-else-if="currentInquiry.status === 'cancel_requested'">
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300 mb-1">
+                                            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                                            Status: Cancellation Pending Confirmation
+                                        </div>
+                                        <h3 class="text-base sm:text-lg font-bold text-rose-900 leading-tight">
+                                            Cancellation requested — awaiting MEO confirmation
+                                        </h3>
+                                        <p class="text-xs sm:text-sm text-rose-800 mt-1">
+                                            You submitted a cancellation request for this concern. An MEO staff, administrator, or superadmin will review and confirm your cancellation shortly.
+                                        </p>
+                                        <div v-if="currentInquiry.cancellation_reason" class="mt-2 p-2.5 rounded-xl bg-white/80 border border-rose-200 text-xs text-rose-900">
+                                            <strong class="font-bold">Reason Provided:</strong> {{ currentInquiry.cancellation_reason }}
+                                        </div>
+                                    </div>
+
+                                    <!-- Cancelled State -->
+                                    <div v-else-if="currentInquiry.status === 'cancelled'">
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-800 border border-slate-300 mb-1">
+                                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                                            Status: Concern Cancelled
+                                        </div>
+                                        <h3 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+                                            This concern has been cancelled
+                                        </h3>
+                                        <p class="text-xs sm:text-sm text-slate-700 mt-1">
+                                            This concern was cancelled and confirmed by the Municipal Engineering Office team.
+                                        </p>
+                                        <p v-if="currentInquiry.cancelled_by_user" class="text-xs font-semibold text-slate-900 mt-1.5 flex items-center gap-1">
+                                            <span>Cancellation Confirmed by:</span>
+                                            <span class="bg-slate-200 px-2 py-0.5 rounded text-slate-900 font-bold">{{ currentInquiry.cancelled_by_user.name }} ({{ currentInquiry.cancelled_by_user.role?.toUpperCase() }})</span>
+                                            <span v-if="currentInquiry.cancelled_at" class="text-slate-500 font-normal">on {{ currentInquiry.cancelled_at }}</span>
+                                        </p>
+                                        <div v-if="currentInquiry.cancellation_reason" class="mt-2 p-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-800">
+                                            <strong class="font-bold">Cancellation Reason:</strong> {{ currentInquiry.cancellation_reason }}
+                                        </div>
+                                    </div>
+
                                     <!-- Pending State -->
                                     <div v-else>
                                         <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 mb-1">
                                             <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                            Status: Waiting for Accept
+                                            Status: Waiting for Acceptance
                                         </div>
                                         <h3 class="text-base sm:text-lg font-bold text-amber-900 leading-tight">
                                             Your concern is waiting for acceptance
@@ -723,7 +895,9 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                                 </div>
                             </div>
 
-                            <!-- "Would you like to relay concerns again?" Action Prompt for Resolved & Accepted -->
+                            <!-- Action Prompts per Status -->
+                            
+                            <!-- Resolved State Actions -->
                             <div 
                                 v-if="currentInquiry.status === 'resolved'"
                                 class="mt-4 pt-3 border-t border-blue-200/70 flex flex-col sm:flex-row items-center justify-between gap-3"
@@ -753,21 +927,94 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                                 </div>
                             </div>
 
+                            <!-- Accepted State Actions -->
                             <div 
                                 v-else-if="currentInquiry.status === 'accepted'"
                                 class="mt-4 pt-3 border-t border-emerald-200/60 flex flex-col sm:flex-row items-center justify-between gap-3"
                             >
                                 <p class="text-xs font-semibold text-emerald-900">
-                                    Would you like to relay concerns again?
+                                    Concern is currently in progress with MEO team.
+                                </p>
+                                <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                    <!-- Cancel Concern Button -->
+                                    <button 
+                                        @click="openCancelModal"
+                                        class="px-3.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 text-xs font-bold rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5"
+                                    >
+                                        <svg class="w-3.5 h-3.5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                        Cancel Concern
+                                    </button>
+
+                                    <button 
+                                        @click="startRelayNewConcern"
+                                        class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-1.5"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Relay Another Concern
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Pending State Actions -->
+                            <div 
+                                v-else-if="currentInquiry.status === 'pending'"
+                                class="mt-4 pt-3 border-t border-amber-200/60 flex flex-col sm:flex-row items-center justify-between gap-3"
+                            >
+                                <p class="text-xs font-semibold text-amber-900">
+                                    Waiting for review by Municipal Engineering Office.
+                                </p>
+                                <button 
+                                    @click="openCancelModal"
+                                    class="px-3.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 text-xs font-bold rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5"
+                                >
+                                    <svg class="w-3.5 h-3.5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                    Cancel Concern
+                                </button>
+                            </div>
+
+                            <!-- Cancellation Pending State Actions -->
+                            <div 
+                                v-else-if="currentInquiry.status === 'cancel_requested'"
+                                class="mt-4 pt-3 border-t border-rose-200/60 flex flex-col sm:flex-row items-center justify-between gap-3"
+                            >
+                                <p class="text-xs font-semibold text-rose-900">
+                                    Changed your mind? You can withdraw the request before confirmation.
+                                </p>
+                                <button 
+                                    @click="withdrawCancellationRequest"
+                                    :disabled="isWithdrawingCancel"
+                                    class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                >
+                                    <svg v-if="isWithdrawingCancel" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Withdraw Cancellation Request
+                                </button>
+                            </div>
+
+                            <!-- Cancelled State Actions -->
+                            <div 
+                                v-else-if="currentInquiry.status === 'cancelled'"
+                                class="mt-4 pt-3 border-t border-slate-300 flex flex-col sm:flex-row items-center justify-between gap-3"
+                            >
+                                <p class="text-xs font-semibold text-slate-800">
+                                    Concern has been cancelled.
                                 </p>
                                 <button 
                                     @click="startRelayNewConcern"
-                                    class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"
+                                    class="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"
                                 >
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                                     </svg>
-                                    Relay Concerns Again
+                                    Submit a New Concern
                                 </button>
                             </div>
                         </div>
@@ -809,6 +1056,14 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                                     <span class="text-gray-500 font-medium">Concern Message:</span>
                                     <div class="mt-1 bg-white p-3 rounded-xl border border-gray-200 text-gray-800 leading-relaxed whitespace-pre-line">
                                         {{ currentInquiry.message }}
+                                    </div>
+                                </div>
+
+                                <!-- Cancellation Reason in Details (if any) -->
+                                <div class="sm:col-span-2" v-if="currentInquiry.cancellation_reason">
+                                    <span class="text-rose-700 font-semibold block mb-1">Cancellation Request / Reason:</span>
+                                    <div class="bg-rose-50/70 p-3 rounded-xl border border-rose-200 text-rose-950 text-xs">
+                                        {{ currentInquiry.cancellation_reason }}
                                     </div>
                                 </div>
 
@@ -950,6 +1205,128 @@ const errorClass = 'mt-1.5 text-xs text-red-600 font-medium';
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 For immediate urgent public hazards, you may also visit the MEO office at Municipal Hall, Opol, Misamis Oriental.
+            </div>
+        </div>
+
+        <!-- ==================== CANCEL CONCERN MODAL ==================== -->
+        <div 
+            v-if="showCancelModal" 
+            class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+            @click.self="closeCancelModal"
+        >
+            <div class="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden my-6">
+                <!-- Modal Header -->
+                <div class="px-6 py-4 bg-gradient-to-r from-rose-600 to-red-600 text-white flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-sm sm:text-base font-bold">Request Concern Cancellation</h3>
+                            <p class="text-[11px] text-rose-100">Subject to confirmation by MEO Staff / Admin</p>
+                        </div>
+                    </div>
+
+                    <button 
+                        @click="closeCancelModal"
+                        :disabled="isCancelling"
+                        class="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="p-6 space-y-4 text-xs">
+                    <!-- Tracking Badge -->
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div>
+                            <span class="text-[10px] font-bold uppercase text-slate-500">Concern Reference Code</span>
+                            <p class="font-mono font-bold text-slate-900 text-xs">{{ currentInquiry?.tracking_token }}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[10px] font-bold uppercase text-slate-500">Current Status</span>
+                            <p class="font-bold text-xs" :class="currentInquiry?.status === 'accepted' ? 'text-emerald-700' : 'text-amber-700'">
+                                {{ currentInquiry?.status === 'accepted' ? 'Accepted / Active' : 'Waiting for Review' }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <p class="text-gray-600 leading-relaxed">
+                        Please indicate the reason why you wish to cancel this reported concern. Your cancellation request will be submitted to the <strong>Municipal Engineering Office</strong> team to be reviewed and confirmed.
+                    </p>
+
+                    <!-- Reason Selection -->
+                    <div>
+                        <label class="block font-bold text-gray-700 uppercase tracking-wider text-[10px] mb-2">
+                            Select Reason for Cancellation <span class="text-red-500">*</span>
+                        </label>
+                        <div class="space-y-2">
+                            <label 
+                                v-for="(reason, rIdx) in presetReasons" 
+                                :key="rIdx"
+                                class="flex items-center gap-2.5 p-2.5 rounded-xl border transition cursor-pointer text-xs"
+                                :class="selectedReasonPreset === reason ? 'border-rose-500 bg-rose-50/60 font-semibold text-rose-950' : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
+                            >
+                                <input 
+                                    type="radio" 
+                                    :value="reason" 
+                                    v-model="selectedReasonPreset" 
+                                    class="text-rose-600 focus:ring-rose-500"
+                                />
+                                <span>{{ reason }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Additional Details / Custom Textarea -->
+                    <div>
+                        <label class="block font-bold text-gray-700 uppercase tracking-wider text-[10px] mb-1.5">
+                            Additional Details / Remarks <span class="text-gray-400 lowercase font-normal">(optional)</span>
+                        </label>
+                        <textarea
+                            v-model="customCancelReason"
+                            rows="3"
+                            placeholder="Provide any additional explanation for the engineering office..."
+                            class="w-full px-3.5 py-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition placeholder:text-gray-400 bg-white text-gray-900"
+                        ></textarea>
+                    </div>
+
+                    <!-- Error Alert -->
+                    <div v-if="cancelError" class="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                        {{ cancelError }}
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3.5 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
+                    <button
+                        type="button"
+                        @click="closeCancelModal"
+                        :disabled="isCancelling"
+                        class="px-4 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-xl transition"
+                    >
+                        Keep Concern Active
+                    </button>
+
+                    <button
+                        type="button"
+                        @click="submitCancellationRequest"
+                        :disabled="isCancelling"
+                        class="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-rose-900/20 disabled:opacity-50"
+                    >
+                        <svg v-if="isCancelling" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        {{ isCancelling ? 'Submitting Request...' : 'Submit Cancellation Request' }}
+                    </button>
+                </div>
             </div>
         </div>
 

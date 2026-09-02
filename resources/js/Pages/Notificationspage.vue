@@ -27,6 +27,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    initialSystemLogs: {
+        type: Array,
+        default: () => [],
+    },
     users: {
         type: Array,
         default: () => [],
@@ -49,6 +53,7 @@ const bulletins = ref([...props.initialBulletins]);
 const reminders = ref([...props.initialReminders]);
 const assignments = ref([...props.initialAssignments]);
 const inquiries = ref([...props.initialInquiries]);
+const systemLogs = ref([...props.initialSystemLogs]);
 const loading = ref(false);
 
 // Read / Archived / Dismissed storage keys
@@ -209,6 +214,10 @@ const silentSyncNotificationsData = async () => {
             axios.get('/inquiries'),
         ];
 
+        if (isSuperadmin.value) {
+            requests.push(axios.get('/superadmin/activity-logs', { params: { severity: 'warning', per_page: 15 } }));
+        }
+
         const responses = await Promise.allSettled(requests);
 
         if (responses[0].status === 'fulfilled' && Array.isArray(responses[0].value.data)) {
@@ -222,6 +231,9 @@ const silentSyncNotificationsData = async () => {
         }
         if (responses[3] && responses[3].status === 'fulfilled' && Array.isArray(responses[3].value.data)) {
             inquiries.value = responses[3].value.data;
+        }
+        if (responses[4] && responses[4].status === 'fulfilled' && responses[4].value.data?.logs?.data) {
+            systemLogs.value = responses[4].value.data.logs.data;
         }
 
         const currentUnread = unreadCount.value;
@@ -373,6 +385,7 @@ const rawNotifications = computed(() => {
     // 3. Bulletins
     bulletins.value.forEach(bulletin => {
         if (bulletin.isArchived) return;
+
         const notifId = `bulletin-${bulletin.id}`;
         if (dismissedIds.value.has(notifId)) return;
 
@@ -382,11 +395,11 @@ const rawNotifications = computed(() => {
             type: 'bulletins',
             typeLabel: 'Bulletin',
             title: bulletin.title,
-            description: bulletin.summary || 'Official announcement posted.',
-            category: bulletin.category || 'Notice',
+            description: bulletin.summary || 'New municipal announcement posted.',
+            category: bulletin.category || 'Announcement',
             time: bulletin.date || 'Notice',
-            timestamp: bulletin.createdAt ? new Date(bulletin.createdAt).getTime() : now.getTime(),
-            isUrgent: bulletin.isPinned || false,
+            timestamp: bulletin.date ? new Date(bulletin.date).getTime() : now.getTime(),
+            isUrgent: false,
             isRead: readIds.value.has(notifId),
             isArchived: archivedIds.value.has(notifId),
             targetTab: 'bulletin',
@@ -395,7 +408,7 @@ const rawNotifications = computed(() => {
         });
     });
 
-    // 4. Staff Assignments & Directives
+    // 4. Staff Assignments, Directives & Deadlines
     assignments.value.forEach(asgn => {
         if (asgn.status === 'completed' || asgn.status === 'cancelled') return;
 
@@ -407,19 +420,19 @@ const rawNotifications = computed(() => {
 
             const isUrgent = (asgn.priority || '').toLowerCase() === 'urgent' || (asgn.priority || '').toLowerCase() === 'high';
             const notifId = `assignment-${asgn.id}`;
+            let itemTitle = asgn.title || 'New Task Assignment';
+            let itemDesc = asgn.note || (asgn.projectName ? `Project: ${asgn.projectName}` : 'New assignment pending action.');
+
+            if (asgn.type === 'assignment') {
+                itemTitle = asgn.projectName ? `Assigned: ${asgn.projectName}` : asgn.title;
+                itemDesc = asgn.roleInProject ? `Role: ${asgn.roleInProject}. ${asgn.note || ''}` : asgn.note || 'You have been assigned to this project.';
+            } else if (asgn.type === 'deadline') {
+                itemTitle = `Deadline: ${asgn.title}`;
+            } else if (asgn.type === 'note') {
+                itemTitle = `Directive: ${asgn.title}`;
+            }
+
             if (!dismissedIds.value.has(notifId)) {
-                let itemTitle = asgn.title || 'New Task';
-                let itemDesc = asgn.note || (asgn.projectName ? `Project: ${asgn.projectName}` : 'New assignment pending action.');
-
-                if (asgn.type === 'assignment') {
-                    itemTitle = asgn.projectName ? `Assigned: ${asgn.projectName}` : asgn.title;
-                    itemDesc = asgn.roleInProject ? `Role: ${asgn.roleInProject}. ${asgn.note || ''}` : asgn.note || 'You have been assigned to this project.';
-                } else if (asgn.type === 'deadline') {
-                    itemTitle = `Deadline: ${asgn.title}`;
-                } else if (asgn.type === 'note') {
-                    itemTitle = `Directive: ${asgn.title}`;
-                }
-
                 list.push({
                     id: notifId,
                     rawId: asgn.id,
@@ -546,9 +559,33 @@ const rawNotifications = computed(() => {
         }
     });
 
-    // 5. Citizen Inquiries (For Admin, Superadmin & Staff)
+    // 5. Citizen Inquiries & Cancellation Requests
     inquiries.value.forEach(inq => {
-        if (inq.status === 'pending') {
+        const isCancelRequested = inq.status === 'cancel_requested';
+        const isPending = inq.status === 'pending';
+
+        if (isCancelRequested) {
+            const notifId = `inquiry-cancel-${inq.id}`;
+            if (dismissedIds.value.has(notifId)) return;
+
+            list.push({
+                id: notifId,
+                rawId: inq.id,
+                type: 'inquiries',
+                typeLabel: 'Cancellation Request',
+                title: `Cancel Request: ${inq.subject || 'Citizen Inquiry'}`,
+                description: `${inq.fullname} requested cancellation: "${inq.cancellation_reason || 'No reason provided'}". Tracking Token: #${inq.tracking_token}. Requires staff/admin confirmation.`,
+                category: 'Cancel Request',
+                time: inq.created_at_relative || 'Pending Confirmation',
+                timestamp: inq.cancelled_at ? new Date(inq.cancelled_at).getTime() : (inq.createdAt ? new Date(inq.createdAt).getTime() : now.getTime()),
+                isUrgent: true,
+                isRead: readIds.value.has(notifId),
+                isArchived: archivedIds.value.has(notifId),
+                targetTab: 'messages',
+                tabName: 'Messages',
+                fullData: inq,
+            });
+        } else if (isPending) {
             const notifId = `inquiry-${inq.id}`;
             if (dismissedIds.value.has(notifId)) return;
 
@@ -556,7 +593,7 @@ const rawNotifications = computed(() => {
                 id: notifId,
                 rawId: inq.id,
                 type: 'inquiries',
-                typeLabel: 'Concern',
+                typeLabel: 'Citizen Concern',
                 title: `Inquiry: ${inq.subject || 'Citizen Question'}`,
                 description: `From ${inq.fullname}: ${(inq.message || '').substring(0, 90)}${(inq.message || '').length > 90 ? '...' : ''}`,
                 category: 'Pending Concern',
@@ -571,6 +608,32 @@ const rawNotifications = computed(() => {
             });
         }
     });
+
+    // 6. Security & Audit Activity Alerts (For Superadmin)
+    if (isSuperadmin.value && Array.isArray(systemLogs.value)) {
+        systemLogs.value.forEach(log => {
+            const notifId = `system-log-${log.id}`;
+            if (dismissedIds.value.has(notifId)) return;
+
+            list.push({
+                id: notifId,
+                rawId: log.id,
+                type: 'system',
+                typeLabel: log.severity === 'danger' ? 'Critical Security' : 'System Warning',
+                title: `${log.action?.toUpperCase() || 'AUDIT'}: ${log.user_name || 'System User'}`,
+                description: log.description || `Action recorded under module ${log.module}.`,
+                category: log.severity === 'danger' ? 'Danger Alert' : 'Audit Warning',
+                time: log.created_at_relative || 'Recent',
+                timestamp: log.createdAt ? new Date(log.createdAt).getTime() : now.getTime() - 1000 * 60 * 30,
+                isUrgent: log.severity === 'danger',
+                isRead: readIds.value.has(notifId),
+                isArchived: archivedIds.value.has(notifId),
+                targetTab: 'logs',
+                tabName: 'Audit Logs',
+                fullData: log,
+            });
+        });
+    }
 
     return list;
 });
@@ -590,6 +653,7 @@ const projectsCount = computed(() => inboxNotifications.value.filter(n => n.type
 const bulletinsCount = computed(() => inboxNotifications.value.filter(n => n.type === 'bulletins').length);
 const assignmentsCount = computed(() => inboxNotifications.value.filter(n => n.type === 'assignments').length);
 const inquiriesCount = computed(() => inboxNotifications.value.filter(n => n.type === 'inquiries').length);
+const systemCount = computed(() => inboxNotifications.value.filter(n => n.type === 'system').length);
 
 // Filtered List based on Active View (Inbox / Archived)
 const displayedNotifications = computed(() => {
@@ -1090,6 +1154,17 @@ onUnmounted(() => {
                     >
                         Inquiries ({{ inquiriesCount }})
                     </button>
+                    <button
+                        v-if="isSuperadmin && systemCount > 0"
+                        type="button"
+                        @click="activeCategory = 'system'"
+                        :class="[
+                            'px-2.5 py-1 text-[11px] font-bold border transition shrink-0 uppercase tracking-wider',
+                            activeCategory === 'system' ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
+                        ]"
+                    >
+                        Audit Alerts ({{ systemCount }})
+                    </button>
                 </div>
             </div>
 
@@ -1124,7 +1199,7 @@ onUnmounted(() => {
                     class="bg-white hover:bg-slate-50/90 transition cursor-pointer px-4 sm:px-8 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs group relative border-l-4"
                     :class="[
                         !item.isRead
-                            ? 'border-l-red-600 bg-red-50/15'
+                            ? (item.category === 'Cancel Request' ? 'border-l-amber-500 bg-amber-50/20' : 'border-l-red-600 bg-red-50/15')
                             : 'border-l-transparent'
                     ]"
                 >
@@ -1137,6 +1212,8 @@ onUnmounted(() => {
                                 item.type === 'reminders' ? 'bg-purple-50 text-purple-800 border-purple-300' :
                                 item.type === 'projects' ? 'bg-amber-50 text-amber-800 border-amber-300' :
                                 item.type === 'assignments' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                                item.type === 'system' ? 'bg-indigo-50 text-indigo-800 border-indigo-300' :
+                                item.category === 'Cancel Request' ? 'bg-amber-100 text-amber-900 border-amber-400 font-black' :
                                 item.type === 'inquiries' ? 'bg-rose-50 text-rose-800 border-rose-300' :
                                 'bg-blue-50 text-blue-800 border-blue-300'
                             ]"
@@ -1283,6 +1360,36 @@ onUnmounted(() => {
 
                         <div class="p-4 bg-slate-50 border border-slate-200 text-slate-800 leading-relaxed whitespace-pre-wrap">
                             {{ selectedNotification.description }}
+                        </div>
+
+                        <!-- Extra Context for Cancellation Requests -->
+                        <div v-if="selectedNotification.category === 'Cancel Request' && selectedNotification.fullData" class="p-3.5 bg-amber-50 border border-amber-200 rounded-lg space-y-1 text-[11px]">
+                            <div class="font-bold text-amber-900 flex items-center gap-1.5">
+                                <i class="ri-alert-line text-amber-600"></i>
+                                <span>Citizen Cancellation Request Details</span>
+                            </div>
+                            <div class="text-amber-800 text-xs">
+                                <strong>Citizen Reason:</strong> {{ selectedNotification.fullData.cancellation_reason || 'None provided' }}
+                            </div>
+                            <div class="text-[11px] text-amber-700 flex items-center gap-3">
+                                <span><strong>Tracking Token:</strong> #{{ selectedNotification.fullData.tracking_token }}</span>
+                                <span><strong>Contact:</strong> {{ selectedNotification.fullData.email || selectedNotification.fullData.phone || 'N/A' }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Extra Context for System Security Audit -->
+                        <div v-if="selectedNotification.type === 'system' && selectedNotification.fullData" class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-lg space-y-1 text-[11px]">
+                            <div class="font-bold text-indigo-900 flex items-center gap-1.5">
+                                <i class="ri-shield-keyhole-line text-indigo-600"></i>
+                                <span>Security & Audit Metadata</span>
+                            </div>
+                            <div class="text-indigo-800 text-xs">
+                                <strong>Actor:</strong> {{ selectedNotification.fullData.user_name }} ({{ selectedNotification.fullData.user_role }})
+                            </div>
+                            <div class="text-[11px] text-indigo-700 flex items-center gap-3">
+                                <span><strong>Module:</strong> {{ selectedNotification.fullData.module }}</span>
+                                <span><strong>IP Address:</strong> {{ selectedNotification.fullData.ip_address || '127.0.0.1' }}</span>
+                            </div>
                         </div>
                     </div>
 

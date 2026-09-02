@@ -40,6 +40,14 @@ class UserController extends Controller
             $user->save();
         }
 
+        \App\Services\ActivityLogger::log(
+            'users',
+            'create',
+            "User account '{$user->name}' ({$user->email}) created with role '{$user->role}'.",
+            'warning',
+            ['user_id' => $user->id, 'role' => $user->role, 'email' => $user->email]
+        );
+
         return response()->json([
             'message' => 'User created successfully.',
             'user' => $user->fresh(),
@@ -59,6 +67,7 @@ class UserController extends Controller
             'email_verified' => ['nullable', 'boolean'],
         ]);
 
+        $oldRole = $user->role;
         $user->name = $validated['name'];
         $user->email = $validated['email'];
         $user->role = $validated['role'];
@@ -68,6 +77,14 @@ class UserController extends Controller
         }
 
         $user->save();
+
+        \App\Services\ActivityLogger::log(
+            'users',
+            'update',
+            "User profile for '{$user->name}' ({$user->email}) was updated. Role: {$oldRole} -> {$user->role}.",
+            'info',
+            ['user_id' => $user->id, 'old_role' => $oldRole, 'new_role' => $user->role]
+        );
 
         return response()->json([
             'message' => 'User updated successfully.',
@@ -94,6 +111,14 @@ class UserController extends Controller
             'remember_token' => Str::random(60),
         ])->save();
 
+        \App\Services\ActivityLogger::log(
+            'users',
+            'reset_password',
+            "Password was manually reset for user '{$user->name}' ({$user->email}).",
+            'warning',
+            ['user_id' => $user->id, 'email' => $user->email]
+        );
+
         return response()->json([
             'message' => "Password reset successfully for {$user->name}.",
             'user_id' => $user->id,
@@ -109,6 +134,14 @@ class UserController extends Controller
         $status = Password::sendResetLink(['email' => $user->email]);
 
         if ($status === Password::RESET_LINK_SENT) {
+            \App\Services\ActivityLogger::log(
+                'users',
+                'reset_link',
+                "Password reset link sent to {$user->email}.",
+                'info',
+                ['user_id' => $user->id, 'email' => $user->email]
+            );
+
             return response()->json([
                 'message' => "Password reset link sent to {$user->email}.",
             ]);
@@ -130,7 +163,19 @@ class UserController extends Controller
             ], 403);
         }
 
+        $userName = $user->name;
+        $userEmail = $user->email;
+        $userRole = $user->role;
+
         $user->delete();
+
+        \App\Services\ActivityLogger::log(
+            'users',
+            'delete',
+            "User account '{$userName}' ({$userEmail}, Role: {$userRole}) was deleted.",
+            'danger',
+            ['name' => $userName, 'email' => $userEmail, 'role' => $userRole]
+        );
 
         return response()->json([
             'message' => 'User account deleted successfully.',

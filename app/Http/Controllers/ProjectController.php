@@ -54,7 +54,7 @@ class ProjectController extends Controller
             'staff_count' => \App\Models\User::where('role', 'staff')->count(),
         ];
 
-        $inquiries = \App\Models\Inquiry::with(['acceptedBy', 'resolvedBy', 'updatedBy'])->latest()->get()->map(function (\App\Models\Inquiry $inquiry) {
+        $inquiries = \App\Models\Inquiry::with(['acceptedBy', 'resolvedBy', 'updatedBy', 'cancelledBy'])->latest()->get()->map(function (\App\Models\Inquiry $inquiry) {
             return [
                 'id' => $inquiry->id,
                 'tracking_token' => $inquiry->tracking_token,
@@ -68,6 +68,14 @@ class ProjectController extends Controller
                 'photo_urls' => $inquiry->photo_urls,
                 'status' => $inquiry->status,
                 'admin_notes' => $inquiry->admin_notes,
+                'cancellation_reason' => $inquiry->cancellation_reason,
+                'cancelled_at' => $inquiry->cancelled_at?->format('M j, Y g:i A'),
+                'cancelled_by' => $inquiry->cancelled_by,
+                'cancelled_by_user' => $inquiry->cancelledBy ? [
+                    'id' => $inquiry->cancelledBy->id,
+                    'name' => $inquiry->cancelledBy->name,
+                    'role' => $inquiry->cancelledBy->role,
+                ] : null,
                 'accepted_at' => $inquiry->accepted_at?->format('M j, Y g:i A'),
                 'accepted_by' => $inquiry->accepted_by,
                 'accepted_by_user' => $inquiry->acceptedBy ? [
@@ -309,6 +317,21 @@ class ProjectController extends Controller
             return $project->load(['remarks', 'latestFundType']);
         });
 
+        $user = auth()->user();
+        \App\Services\ActivityLogger::log(
+            'projects',
+            'create',
+            "Infrastructure project '{$project->project_name}' registered at {$project->location} (Budget: PHP " . number_format((float)$project->total_project_cost, 2) . ") by {$user?->name}.",
+            'info',
+            [
+                'project_id' => $project->id,
+                'name' => $project->project_name,
+                'location' => $project->location,
+                'budget' => (float)$project->total_project_cost,
+                'status' => $validated['status'],
+            ]
+        );
+
         return response()->json([
             'message' => 'Project created successfully.',
             'project' => $this->toProjectTabData($project),
@@ -365,6 +388,20 @@ class ProjectController extends Controller
             return $project->load(['remarks', 'latestFundType']);
         });
 
+        $user = auth()->user();
+        \App\Services\ActivityLogger::log(
+            'projects',
+            'update',
+            "Project record '{$project->project_name}' updated by {$user?->name}. Status: {$validated['status']}, Accomplishment: {$validated['accomplishment']}%.",
+            'info',
+            [
+                'project_id' => $project->id,
+                'name' => $project->project_name,
+                'status' => $validated['status'],
+                'accomplishment' => $validated['accomplishment'],
+            ]
+        );
+
         return response()->json([
             'message' => 'Project updated successfully.',
             'project' => $this->toProjectTabData($project),
@@ -379,6 +416,7 @@ class ProjectController extends Controller
             'remarks' => ['nullable', 'string', 'max:500'],
         ]);
 
+        $oldAcc = $project->percentage_of_accomplishment;
         $project->percentage_of_accomplishment = $validated['accomplishment'];
 
         if (isset($validated['status'])) {
@@ -399,6 +437,19 @@ class ProjectController extends Controller
         }
 
         $project->load(['remarks', 'latestFundType', 'techprep']);
+
+        $user = auth()->user();
+        \App\Services\ActivityLogger::log(
+            'projects',
+            'progress_update',
+            "Physical accomplishment for '{$project->project_name}' updated by {$user?->name}: {$oldAcc}% -> {$validated['accomplishment']}%.",
+            'success',
+            [
+                'project_id' => $project->id,
+                'previous_accomplishment' => $oldAcc,
+                'new_accomplishment' => $validated['accomplishment'],
+            ]
+        );
 
         return response()->json([
             'message' => 'Project accomplishment updated successfully.',

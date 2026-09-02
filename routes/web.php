@@ -102,6 +102,8 @@ Route::get('/', function () {
 Route::get('/ask-meo', [AskMeoController::class, 'index'])->name('ask.meo');
 Route::get('/resolve-concern/{token?}', [AskMeoController::class, 'resolvedConcern'])->name('ask.meo.resolved');
 Route::post('/ask-meo', [AskMeoController::class, 'store'])->name('ask.meo.send');
+Route::post('/ask-meo/cancel', [AskMeoController::class, 'cancelConcern'])->name('ask.meo.cancel');
+Route::post('/ask-meo/withdraw-cancel', [AskMeoController::class, 'withdrawCancel'])->name('ask.meo.withdraw-cancel');
 Route::post('/ask-meo/check-status', [AskMeoController::class, 'checkStatus'])->name('ask.meo.check-status');
 Route::post('/ask-meo/reset', [AskMeoController::class, 'resetSession'])->name('ask.meo.reset');
 
@@ -217,6 +219,9 @@ Route::middleware(['auth', 'superadmin'])->prefix('superadmin')->name('superadmi
     Route::post('/users/{user}/reset-password', [\App\Http\Controllers\UserController::class, 'resetPassword'])->name('users.reset-password');
     Route::post('/users/{user}/send-reset-link', [\App\Http\Controllers\UserController::class, 'sendResetLink'])->name('users.send-reset-link');
     Route::delete('/users/{user}', [\App\Http\Controllers\UserController::class, 'destroy'])->name('users.destroy');
+    Route::get('/activity-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->name('activity-logs.index');
+    Route::get('/activity-logs/export', [\App\Http\Controllers\ActivityLogController::class, 'exportCsv'])->name('activity-logs.export');
+    Route::post('/activity-logs/clear', [\App\Http\Controllers\ActivityLogController::class, 'clear'])->name('activity-logs.clear');
 });
 
 require __DIR__.'/auth.php';

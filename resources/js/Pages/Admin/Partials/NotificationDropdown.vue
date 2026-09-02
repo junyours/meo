@@ -19,12 +19,13 @@ const isStaff = computed(() => userRole.value === 'staff');
 const isAdminOrSuperadmin = computed(() => userRole.value === 'admin' || userRole.value === 'superadmin');
 
 const isOpen = ref(false);
-const activeFilter = ref('all'); // 'all' | 'reminders' | 'projects' | 'bulletins' | 'assignments' | 'inquiries'
+const activeFilter = ref('all'); // 'all' | 'reminders' | 'projects' | 'bulletins' | 'assignments' | 'inquiries' | 'system'
 
 const reminders = ref([]);
 const bulletins = ref([]);
 const assignments = ref([]);
 const inquiries = ref([]);
+const systemLogs = ref([]);
 const loading = ref(false);
 
 const readIds = ref(new Set());
@@ -104,7 +105,11 @@ const fetchNotificationsData = async () => {
             axios.get('/inquiries'),
         ];
 
-        const [remindersRes, bulletinsRes, assignmentsRes, inquiriesRes] = await Promise.allSettled(requests);
+        if (userRole.value === 'superadmin') {
+            requests.push(axios.get('/superadmin/activity-logs', { params: { severity: 'warning', per_page: 10 } }));
+        }
+
+        const [remindersRes, bulletinsRes, assignmentsRes, inquiriesRes, logsRes] = await Promise.allSettled(requests);
 
         if (remindersRes.status === 'fulfilled' && Array.isArray(remindersRes.value.data)) {
             reminders.value = remindersRes.value.data;
@@ -120,6 +125,10 @@ const fetchNotificationsData = async () => {
 
         if (inquiriesRes && inquiriesRes.status === 'fulfilled' && Array.isArray(inquiriesRes.value.data)) {
             inquiries.value = inquiriesRes.value.data;
+        }
+
+        if (logsRes && logsRes.status === 'fulfilled' && logsRes.value.data?.logs?.data) {
+            systemLogs.value = logsRes.value.data.logs.data;
         }
     } catch (err) {
         console.error('Failed to load notification items', err);
@@ -460,7 +469,28 @@ const notifications = computed(() => {
 
     // 5. Citizen Inquiries (For Admin, Superadmin & Staff)
     inquiries.value.forEach(inq => {
-        if (inq.status === 'pending') {
+        const isCancelRequested = inq.status === 'cancel_requested';
+        const isPending = inq.status === 'pending';
+
+        if (isCancelRequested) {
+            const notifId = `inquiry-cancel-${inq.id}`;
+            list.push({
+                id: notifId,
+                rawId: inq.id,
+                type: 'inquiries',
+                typeLabel: 'Cancellation Request',
+                title: `Cancel Request: ${inq.subject || 'Citizen Inquiry'}`,
+                description: `${inq.fullname} requested cancellation: "${inq.cancellation_reason || 'No reason provided'}". Requires confirmation.`,
+                category: 'Cancel Request',
+                time: inq.created_at_relative || 'Pending Confirmation',
+                timestamp: inq.cancelled_at ? new Date(inq.cancelled_at).getTime() : now.getTime(),
+                isUrgent: true,
+                isRead: readIds.value.has(notifId),
+                targetTab: 'messages',
+                tabName: 'Messages Tab',
+                inquiryItem: inq,
+            });
+        } else if (isPending) {
             const notifId = `inquiry-${inq.id}`;
             list.push({
                 id: notifId,
@@ -480,6 +510,29 @@ const notifications = computed(() => {
             });
         }
     });
+
+    // 6. Security & Audit Activity Alerts (For Superadmin)
+    if (userRole.value === 'superadmin' && Array.isArray(systemLogs.value)) {
+        systemLogs.value.forEach(log => {
+            const notifId = `system-log-${log.id}`;
+            list.push({
+                id: notifId,
+                rawId: log.id,
+                type: 'system',
+                typeLabel: log.severity === 'danger' ? 'Critical Security' : 'System Warning',
+                title: `${log.action?.toUpperCase() || 'AUDIT'}: ${log.user_name || 'System User'}`,
+                description: log.description || `Action logged under module ${log.module}.`,
+                category: log.severity === 'danger' ? 'Danger Alert' : 'Audit Warning',
+                time: log.created_at_relative || 'Recent',
+                timestamp: log.createdAt ? new Date(log.createdAt).getTime() : now.getTime() - 1000 * 60 * 30,
+                isUrgent: log.severity === 'danger',
+                isRead: readIds.value.has(notifId),
+                targetTab: 'logs',
+                tabName: 'Audit Logs',
+                logItem: log,
+            });
+        });
+    }
 
     // Sort: unread & urgent first, then by timestamp descending
     return list.sort((a, b) => {
@@ -503,6 +556,7 @@ const projectsCount = computed(() => notifications.value.filter(n => n.type === 
 const bulletinsCount = computed(() => notifications.value.filter(n => n.type === 'bulletins').length);
 const assignmentsCount = computed(() => notifications.value.filter(n => n.type === 'assignments').length);
 const inquiriesCount = computed(() => notifications.value.filter(n => n.type === 'inquiries').length);
+const systemCount = computed(() => notifications.value.filter(n => n.type === 'system').length);
 
 const toggleDropdown = () => {
     isOpen.value = !isOpen.value;
@@ -796,6 +850,19 @@ watch(currentUser, () => {
                     >
                         Inquiries ({{ inquiriesCount }})
                     </button>
+                    <button
+                        v-if="userRole === 'superadmin' && systemCount > 0"
+                        type="button"
+                        @click="activeFilter = 'system'"
+                        :class="[
+                            'px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 text-xs',
+                            activeFilter === 'system'
+                                ? 'bg-red-700 text-white font-semibold shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800'
+                        ]"
+                    >
+                        Audit Alerts ({{ systemCount }})
+                    </button>
                 </div>
 
                 <!-- 3. Notifications List Body (Takes remaining space, fixed scrollable) -->
@@ -824,13 +891,14 @@ watch(currentUser, () => {
                         @click="handleNotificationClick(item)"
                         :class="[
                             'p-3 flex items-start gap-3 hover:bg-slate-100/80 transition-colors cursor-pointer group relative',
-                            !item.isRead ? 'bg-red-50/30' : 'bg-white'
+                            !item.isRead ? (item.category === 'Cancel Request' ? 'bg-amber-50/50' : 'bg-red-50/30') : 'bg-white'
                         ]"
                     >
                         <!-- Unread Dot -->
                         <span
                             v-if="!item.isRead"
-                            class="absolute left-1.5 top-4 h-2 w-2 rounded-full bg-red-600 ring-2 ring-red-100"
+                            class="absolute left-1.5 top-4 h-2 w-2 rounded-full ring-2"
+                            :class="item.category === 'Cancel Request' ? 'bg-amber-600 ring-amber-100' : 'bg-red-600 ring-red-100'"
                         ></span>
 
                         <!-- Type Icon -->
@@ -840,6 +908,8 @@ watch(currentUser, () => {
                                 item.type === 'reminders' ? 'bg-purple-100 text-purple-700' :
                                 item.type === 'projects' ? 'bg-amber-100 text-amber-700' :
                                 item.type === 'assignments' ? 'bg-emerald-100 text-emerald-700' :
+                                item.type === 'system' ? 'bg-indigo-100 text-indigo-700' :
+                                item.category === 'Cancel Request' ? 'bg-amber-100 text-amber-700' :
                                 item.type === 'inquiries' ? 'bg-rose-100 text-rose-700' :
                                 'bg-blue-100 text-blue-700'
                             ]"
@@ -859,9 +929,19 @@ watch(currentUser, () => {
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                             </svg>
 
+                            <!-- Citizen Cancel Request Icon -->
+                            <svg v-else-if="item.category === 'Cancel Request'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+
                             <!-- Citizen Inquiries Icon -->
                             <svg v-else-if="item.type === 'inquiries'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                            </svg>
+
+                            <!-- System Audit Alert Icon -->
+                            <svg v-else-if="item.type === 'system'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                             </svg>
 
                             <!-- Bulletin Icon -->
@@ -892,6 +972,8 @@ watch(currentUser, () => {
                                         item.type === 'reminders' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
                                         item.type === 'projects' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                                         item.type === 'assignments' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                        item.type === 'system' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                                        item.category === 'Cancel Request' ? 'bg-amber-50 text-amber-700 border border-amber-300 font-semibold' :
                                         item.type === 'inquiries' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                                         'bg-blue-50 text-blue-700 border border-blue-200'
                                     ]"

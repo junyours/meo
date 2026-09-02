@@ -36,6 +36,15 @@ class AuthenticatedSessionController extends Controller
 
         $user = Auth::user();
         
+        \App\Services\ActivityLogger::log(
+            'auth',
+            'login',
+            "User '{$user->name}' ({$user->email}) successfully logged in with {$user->role} privileges.",
+            'info',
+            ['user_id' => $user->id, 'role' => $user->role],
+            $user
+        );
+
         // Redirect based on user role
         if ($user->role === 'superadmin') {
             return redirect('/superadmin/dashboard');
@@ -53,6 +62,18 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $user = Auth::user();
+        if ($user) {
+            \App\Services\ActivityLogger::log(
+                'auth',
+                'logout',
+                "User '{$user->name}' ({$user->email}) logged out of the session.",
+                'info',
+                ['user_id' => $user->id, 'role' => $user->role],
+                $user
+            );
+        }
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

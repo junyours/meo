@@ -25,10 +25,13 @@ class Inquiry extends Model
         'photos',
         'status',
         'admin_notes',
+        'cancellation_reason',
         'accepted_at',
         'accepted_by',
         'resolved_at',
         'resolved_by',
+        'cancelled_at',
+        'cancelled_by',
         'updated_by',
     ];
 
@@ -36,6 +39,7 @@ class Inquiry extends Model
         'photos' => 'array',
         'accepted_at' => 'datetime',
         'resolved_at' => 'datetime',
+        'cancelled_at' => 'datetime',
     ];
 
     protected $appends = [
@@ -51,6 +55,11 @@ class Inquiry extends Model
     public function resolvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'resolved_by');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 
     public function updatedBy(): BelongsTo

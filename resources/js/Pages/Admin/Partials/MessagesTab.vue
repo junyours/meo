@@ -21,6 +21,9 @@
                                 <span v-if="countByStatus('pending') > 0" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
                                     {{ countByStatus('pending') }} Waiting
                                 </span>
+                                <span v-if="countByStatus('cancel_requested') > 0" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                                    {{ countByStatus('cancel_requested') }} Cancel Request{{ countByStatus('cancel_requested') > 1 ? 's' : '' }}
+                                </span>
                             </div>
                             <p class="text-[11px] text-gray-500">Public concern reports, citizen inquiries &amp; site inspection requests</p>
                         </div>
@@ -57,7 +60,7 @@
                         :class="statusFilter === 'all' ? 'bg-red-50 text-red-700 border-red-200 font-bold shadow-2xs' : 'border-transparent text-gray-600 hover:bg-gray-100'"
                     >
                         <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-                        All Inquiries
+                        All Active
                         <span class="px-1.5 py-0.2 rounded text-[10px]" :class="statusFilter === 'all' ? 'bg-red-200 text-red-800' : 'bg-gray-200 text-gray-700'">
                             {{ activeInquiriesCount }}
                         </span>
@@ -87,6 +90,19 @@
                         </span>
                     </button>
 
+                    <!-- Cancellation Requests Tab -->
+                    <button 
+                        @click="statusFilter = 'cancel_requested'; currentPage = 1;"
+                        class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 border"
+                        :class="statusFilter === 'cancel_requested' ? 'bg-rose-50 text-rose-900 border-rose-300 font-bold shadow-2xs' : 'border-transparent text-gray-600 hover:bg-gray-100'"
+                    >
+                        <span class="w-2 h-2 rounded-full bg-rose-500" :class="{ 'animate-pulse': countByStatus('cancel_requested') > 0 }"></span>
+                        Cancellation Requests
+                        <span class="px-1.5 py-0.2 rounded text-[10px] font-bold" :class="countByStatus('cancel_requested') > 0 ? 'bg-rose-200 text-rose-900' : 'bg-gray-200 text-gray-700'">
+                            {{ countByStatus('cancel_requested') }}
+                        </span>
+                    </button>
+
                     <button 
                         @click="statusFilter = 'resolved'; currentPage = 1;"
                         class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 border"
@@ -96,6 +112,18 @@
                         Resolved
                         <span class="px-1.5 py-0.2 rounded text-[10px] font-bold" :class="statusFilter === 'resolved' ? 'bg-blue-200 text-blue-900' : 'bg-gray-200 text-gray-700'">
                             {{ countByStatus('resolved') }}
+                        </span>
+                    </button>
+
+                    <button 
+                        @click="statusFilter = 'cancelled'; currentPage = 1;"
+                        class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 border"
+                        :class="statusFilter === 'cancelled' ? 'bg-slate-200 text-slate-900 border-slate-400 font-bold shadow-2xs' : 'border-transparent text-gray-600 hover:bg-gray-100'"
+                    >
+                        <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                        Cancelled
+                        <span class="px-1.5 py-0.2 rounded text-[10px]" :class="statusFilter === 'cancelled' ? 'bg-slate-300 text-slate-900' : 'bg-gray-200 text-gray-700'">
+                            {{ countByStatus('cancelled') }}
                         </span>
                     </button>
 
@@ -196,6 +224,8 @@
                     :class="{
                         'border-l-amber-500 bg-amber-50/20': item.status === 'pending',
                         'border-l-emerald-500': item.status === 'accepted',
+                        'border-l-rose-500 bg-rose-50/30': item.status === 'cancel_requested',
+                        'border-l-slate-400 bg-slate-50/40': item.status === 'cancelled',
                         'border-l-blue-500': item.status === 'resolved',
                         'border-l-gray-300': item.status === 'declined'
                     }"
@@ -208,6 +238,8 @@
                             :class="{
                                 'bg-amber-500 ring-2 ring-amber-100 animate-pulse': item.status === 'pending',
                                 'bg-emerald-500': item.status === 'accepted',
+                                'bg-rose-500 ring-2 ring-rose-100 animate-pulse': item.status === 'cancel_requested',
+                                'bg-slate-500': item.status === 'cancelled',
                                 'bg-blue-500': item.status === 'resolved',
                                 'bg-gray-400': item.status === 'declined'
                             }"
@@ -239,8 +271,10 @@
 
                         <!-- Subject & Content Preview (Gmail Bold Subject - Regular Message Style) -->
                         <div class="min-w-0 truncate text-gray-600">
+                            <strong class="text-rose-700 font-bold" v-if="item.status === 'cancel_requested'">[Cancellation Requested] </strong>
                             <strong class="text-gray-900 font-bold" v-if="item.subject">{{ item.subject }} — </strong>
                             <span class="text-gray-600">{{ item.message }}</span>
+                            <span v-if="item.cancellation_reason" class="text-rose-600 italic ml-1">(Reason: {{ item.cancellation_reason }})</span>
                         </div>
 
                         <!-- Photo Attachment Indicator -->
@@ -263,11 +297,14 @@
                                 class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border block w-max ml-auto"
                                 :class="statusClasses[item.status] || 'bg-gray-100 text-gray-700'"
                             >
-                                {{ item.status === 'pending' ? 'Waiting' : item.status }}
+                                {{ item.status === 'cancel_requested' ? 'Cancel Requested' : (item.status === 'cancelled' ? 'Cancelled' : (item.status === 'pending' ? 'Waiting' : item.status)) }}
                             </span>
                             
                             <!-- Handler Officer Snippet -->
-                            <div v-if="item.resolved_by_user" class="text-[10px] text-blue-700 font-semibold mt-0.5">
+                            <div v-if="item.cancelled_by_user" class="text-[10px] text-slate-700 font-semibold mt-0.5">
+                                Cancelled by {{ item.cancelled_by_user.name }}
+                            </div>
+                            <div v-else-if="item.resolved_by_user" class="text-[10px] text-blue-700 font-semibold mt-0.5">
                                 Resolved by {{ item.resolved_by_user.name }}
                             </div>
                             <div v-else-if="item.accepted_by_user" class="text-[10px] text-emerald-700 font-semibold mt-0.5">
@@ -283,12 +320,31 @@
                             {{ item.created_at_relative || item.created_at }}
                         </span>
 
-                        <!-- Action Buttons (Accept / Resolve / Remarks / Delete) -->
+                        <!-- Action Buttons (Accept / Resolve / Cancel / Remarks / Delete) -->
                         <div class="flex items-center gap-1 pl-1" @click.stop>
+                            <!-- Cancellation Requested: Quick Confirm or Reject -->
+                            <template v-if="item.status === 'cancel_requested'">
+                                <button 
+                                    @click="promptConfirmCancellation(item)"
+                                    class="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition shadow-2xs flex items-center gap-1"
+                                    title="Confirm cancellation of this concern"
+                                >
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    Confirm Cancel
+                                </button>
+                                <button 
+                                    @click="promptKeepActive(item)"
+                                    class="px-1.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-medium transition"
+                                    title="Keep concern active (decline cancellation)"
+                                >
+                                    Keep Active
+                                </button>
+                            </template>
+
                             <!-- Accept Concern: ONLY SHOW IF PENDING -->
                             <button 
                                 v-if="item.status === 'pending'"
-                                @click="updateStatus(item, 'accepted')"
+                                @click="promptAcceptConcern(item)"
                                 class="p-1 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded transition border border-emerald-300 shadow-2xs"
                                 title="Accept this public concern"
                             >
@@ -298,11 +354,21 @@
                             <!-- Mark Resolved: ONLY SHOW IF ACCEPTED -->
                             <button 
                                 v-if="item.status === 'accepted'"
-                                @click="updateStatus(item, 'resolved')"
+                                @click="promptResolveConcern(item)"
                                 class="p-1 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded transition border border-blue-300 shadow-2xs"
                                 title="Mark as resolved"
                             >
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </button>
+
+                            <!-- Cancel Concern Quick Action (for pending / accepted) -->
+                            <button 
+                                v-if="item.status === 'pending' || item.status === 'accepted'"
+                                @click="promptCancelConcern(item)"
+                                class="p-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white rounded transition border border-rose-200"
+                                title="Cancel Concern"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             </button>
 
                             <!-- Add / Edit Remarks -->
@@ -325,7 +391,7 @@
 
                             <!-- Delete Inquiry -->
                             <button 
-                                @click="deleteInquiry(item)"
+                                @click="promptDeleteInquiry(item)"
                                 class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
                                 title="Delete Record"
                             >
@@ -396,7 +462,7 @@
                                 class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
                                 :class="statusClasses[selectedInquiry.status] || 'bg-gray-100 text-gray-700 border-gray-200'"
                             >
-                                {{ selectedInquiry.status === 'pending' ? 'Waiting for Review' : (selectedInquiry.status === 'accepted' ? 'Accepted / In Progress' : (selectedInquiry.status === 'resolved' ? 'Resolved' : selectedInquiry.status)) }}
+                                {{ selectedInquiry.status === 'cancel_requested' ? 'Cancellation Requested' : (selectedInquiry.status === 'cancelled' ? 'Concern Cancelled' : (selectedInquiry.status === 'pending' ? 'Waiting for Review' : (selectedInquiry.status === 'accepted' ? 'Accepted / In Progress' : (selectedInquiry.status === 'resolved' ? 'Resolved' : selectedInquiry.status)))) }}
                             </span>
                             <span class="text-[11px] text-gray-400">
                                 {{ selectedInquiry.created_at_relative || selectedInquiry.created_at }}
@@ -419,8 +485,55 @@
 
                 <!-- Modal Body -->
                 <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                    <!-- Cancellation Requested Banner -->
+                    <div v-if="selectedInquiry.status === 'cancel_requested'" class="rounded p-3.5 bg-rose-50 border border-rose-300 text-rose-950">
+                        <div class="flex items-center gap-1.5 font-bold text-xs mb-1 text-rose-900">
+                            <svg class="w-4 h-4 text-rose-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span>Citizen Requested Concern Cancellation:</span>
+                        </div>
+                        <p class="text-xs text-rose-900 mt-1">
+                            <strong>Reason:</strong> {{ selectedInquiry.cancellation_reason || 'No detailed reason provided' }}
+                        </p>
+                        <div class="mt-2.5 pt-2 border-t border-rose-200 flex items-center gap-2">
+                            <button 
+                                @click="promptConfirmCancellation(selectedInquiry)"
+                                class="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition flex items-center gap-1"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                Confirm Cancellation
+                            </button>
+                            <button 
+                                @click="promptKeepActive(selectedInquiry)"
+                                class="px-3 py-1 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded text-xs font-semibold transition"
+                            >
+                                Keep Concern Active
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cancelled Information Box -->
+                    <div v-else-if="selectedInquiry.status === 'cancelled'" class="rounded p-3.5 bg-slate-100 border border-slate-300 text-slate-900">
+                        <div class="flex items-center gap-1.5 font-bold text-xs mb-1 text-slate-800">
+                            <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            <span>Concern Cancelled:</span>
+                        </div>
+                        <div class="text-xs text-slate-700 space-y-1">
+                            <p v-if="selectedInquiry.cancelled_by_user">
+                                <strong>Confirmed by:</strong> {{ selectedInquiry.cancelled_by_user.name }} ({{ selectedInquiry.cancelled_by_user.role?.toUpperCase() }})
+                                <span v-if="selectedInquiry.cancelled_at" class="text-slate-500 font-normal"> on {{ selectedInquiry.cancelled_at }}</span>
+                            </p>
+                            <p v-if="selectedInquiry.cancellation_reason">
+                                <strong>Reason:</strong> {{ selectedInquiry.cancellation_reason }}
+                            </p>
+                        </div>
+                    </div>
+
                     <!-- Handling Officer Info Box (If Accepted or Resolved) -->
-                    <div v-if="selectedInquiry.accepted_by_user || selectedInquiry.resolved_by_user" class="rounded p-3 border" :class="selectedInquiry.status === 'resolved' ? 'bg-blue-50 border-blue-200 text-blue-950' : 'bg-emerald-50 border-emerald-200 text-emerald-950'">
+                    <div v-else-if="selectedInquiry.accepted_by_user || selectedInquiry.resolved_by_user" class="rounded p-3 border" :class="selectedInquiry.status === 'resolved' ? 'bg-blue-50 border-blue-200 text-blue-950' : 'bg-emerald-50 border-emerald-200 text-emerald-950'">
                         <div class="flex items-center gap-1.5 font-bold text-xs mb-1">
                             <svg class="w-3.5 h-3.5" :class="selectedInquiry.status === 'resolved' ? 'text-blue-600' : 'text-emerald-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                             <span>Officer Assignment:</span>
@@ -520,7 +633,7 @@
                     <div class="flex items-center gap-2">
                         <!-- Delete Inquiry Button -->
                         <button 
-                            @click="deleteInquiry(selectedInquiry); closeDetailsModal();"
+                            @click="promptDeleteInquiry(selectedInquiry)"
                             class="px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition flex items-center gap-1"
                         >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -537,20 +650,50 @@
                             Close
                         </button>
 
-                        <!-- Accept Concern: ONLY IF PENDING (DISAPPEARS IF ACCEPTED OR RESOLVED) -->
+                        <!-- Cancel Request: Confirm or Decline -->
+                        <template v-if="selectedInquiry.status === 'cancel_requested'">
+                            <button 
+                                @click="promptConfirmCancellation(selectedInquiry)"
+                                class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded transition shadow-2xs flex items-center gap-1.5"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                Confirm Cancellation
+                            </button>
+                        </template>
+
+                        <!-- If Cancelled: Option to Re-activate -->
+                        <template v-else-if="selectedInquiry.status === 'cancelled'">
+                            <button 
+                                @click="promptReactivate(selectedInquiry)"
+                                class="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded transition flex items-center gap-1.5"
+                            >
+                                Re-activate Concern
+                            </button>
+                        </template>
+
+                        <!-- Accept Concern: ONLY IF PENDING -->
                         <button 
                             v-if="selectedInquiry.status === 'pending'"
-                            @click="updateStatus(selectedInquiry, 'accepted')"
+                            @click="promptAcceptConcern(selectedInquiry)"
                             class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded transition shadow-2xs flex items-center gap-1.5"
                         >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                             Accept Concern
                         </button>
 
+                        <!-- Cancel Concern Option for pending or accepted -->
+                        <button 
+                            v-if="selectedInquiry.status === 'pending' || selectedInquiry.status === 'accepted'"
+                            @click="promptCancelConcern(selectedInquiry)"
+                            class="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-semibold rounded transition flex items-center gap-1"
+                        >
+                            Cancel Concern
+                        </button>
+
                         <!-- Mark Resolved Button: ONLY IF ACCEPTED (DISAPPEARS IF RESOLVED) -->
                         <button 
                             v-if="selectedInquiry.status === 'accepted'"
-                            @click="updateStatus(selectedInquiry, 'resolved')"
+                            @click="promptResolveConcern(selectedInquiry)"
                             class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition shadow-2xs flex items-center gap-1.5"
                         >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -566,6 +709,110 @@
                             Resolved
                         </span>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== POPPING UP CONFIRMATION / ACTION MODAL ==================== -->
+        <div 
+            v-if="confirmDialog.show" 
+            class="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+            @click.self="closeConfirmDialog"
+        >
+            <div class="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden transform transition-all my-6">
+                <!-- Header with colored banner based on type -->
+                <div 
+                    class="px-5 py-4 flex items-center gap-3 text-white"
+                    :class="{
+                        'bg-gradient-to-r from-rose-600 to-red-600': confirmDialog.type === 'danger' || confirmDialog.type === 'cancel',
+                        'bg-gradient-to-r from-emerald-600 to-teal-600': confirmDialog.type === 'success' || confirmDialog.type === 'accept',
+                        'bg-gradient-to-r from-blue-600 to-indigo-600': confirmDialog.type === 'resolve',
+                        'bg-gradient-to-r from-slate-700 to-gray-800': confirmDialog.type === 'info' || confirmDialog.type === 'default'
+                    }"
+                >
+                    <div class="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                        <!-- Accept / Check -->
+                        <svg v-if="confirmDialog.type === 'success' || confirmDialog.type === 'accept'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                        <!-- Resolve -->
+                        <svg v-else-if="confirmDialog.type === 'resolve'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <!-- Danger / Delete / Cancel -->
+                        <svg v-else-if="confirmDialog.type === 'danger' || confirmDialog.type === 'cancel'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <!-- Default / Info -->
+                        <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h3 class="text-sm sm:text-base font-bold leading-tight">{{ confirmDialog.title }}</h3>
+                        <p class="text-[11px] opacity-90 truncate" v-if="confirmDialog.subtitle">{{ confirmDialog.subtitle }}</p>
+                    </div>
+                    <button 
+                        @click="closeConfirmDialog" 
+                        :disabled="confirmDialog.loading"
+                        class="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <!-- Body -->
+                <div class="p-5 space-y-3.5 text-xs text-gray-700">
+                    <!-- Concern Info Banner -->
+                    <div v-if="confirmDialog.inquiry" class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                        <div class="flex items-center justify-between">
+                            <span class="font-mono font-bold text-gray-900 text-xs">{{ confirmDialog.inquiry.tracking_token }}</span>
+                            <span class="text-[10px] font-semibold text-gray-500 uppercase">{{ confirmDialog.inquiry.location }}</span>
+                        </div>
+                        <p class="text-gray-800 font-semibold truncate">{{ confirmDialog.inquiry.fullname }} &bull; {{ confirmDialog.inquiry.phone }}</p>
+                        <p v-if="confirmDialog.inquiry.cancellation_reason && confirmDialog.type === 'cancel'" class="text-rose-700 font-medium text-[11px] pt-1 border-t border-slate-200 mt-1">
+                            <strong>Citizen's Reason:</strong> {{ confirmDialog.inquiry.cancellation_reason }}
+                        </p>
+                    </div>
+
+                    <p class="text-gray-600 leading-relaxed">{{ confirmDialog.message }}</p>
+
+                    <!-- Optional Textarea (for reason or notes) -->
+                    <div v-if="confirmDialog.showInput">
+                        <label class="block font-bold text-gray-700 uppercase tracking-wider text-[10px] mb-1">
+                            {{ confirmDialog.inputLabel || 'Remarks / Reason' }} <span v-if="confirmDialog.inputRequired" class="text-red-500">*</span>
+                        </label>
+                        <textarea
+                            v-model="confirmDialog.inputValue"
+                            rows="3"
+                            :placeholder="confirmDialog.inputPlaceholder || 'Enter details...'"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition placeholder:text-gray-400 bg-white text-gray-900"
+                        ></textarea>
+                        <p v-if="confirmDialog.inputError" class="mt-1 text-[11px] text-red-600 font-medium">{{ confirmDialog.inputError }}</p>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="px-5 py-3.5 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
+                    <button
+                        type="button"
+                        @click="closeConfirmDialog"
+                        :disabled="confirmDialog.loading"
+                        class="px-4 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-xl transition"
+                    >
+                        {{ confirmDialog.cancelText || 'Cancel' }}
+                    </button>
+
+                    <button
+                        type="button"
+                        @click="handleConfirmDialogSubmit"
+                        :disabled="confirmDialog.loading"
+                        class="inline-flex items-center gap-1.5 px-5 py-2 text-white text-xs font-bold rounded-xl transition shadow-md disabled:opacity-50"
+                        :class="{
+                            'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 shadow-rose-900/20': confirmDialog.type === 'danger' || confirmDialog.type === 'cancel',
+                            'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-900/20': confirmDialog.type === 'success' || confirmDialog.type === 'accept',
+                            'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-900/20': confirmDialog.type === 'resolve',
+                            'bg-slate-800 hover:bg-slate-900 shadow-slate-900/20': confirmDialog.type === 'info' || confirmDialog.type === 'default'
+                        }"
+                    >
+                        <svg v-if="confirmDialog.loading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>{{ confirmDialog.confirmText || 'Confirm' }}</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -651,6 +898,208 @@ const closeDetailsModal = () => {
     selectedInquiry.value = null;
 };
 
+// Popping Up Confirmation Dialog State
+const confirmDialog = ref({
+    show: false,
+    title: '',
+    subtitle: '',
+    message: '',
+    type: 'default', // 'accept', 'resolve', 'cancel', 'danger', 'info', 'default'
+    inquiry: null,
+    showInput: false,
+    inputLabel: '',
+    inputValue: '',
+    inputPlaceholder: '',
+    inputRequired: false,
+    inputError: '',
+    cancelText: 'Cancel',
+    confirmText: 'Confirm',
+    loading: false,
+    onConfirm: null,
+});
+
+const openConfirmDialog = (config) => {
+    confirmDialog.value = {
+        show: true,
+        title: config.title || 'Confirmation',
+        subtitle: config.subtitle || '',
+        message: config.message || 'Please confirm this action.',
+        type: config.type || 'default',
+        inquiry: config.inquiry || null,
+        showInput: !!config.showInput,
+        inputLabel: config.inputLabel || '',
+        inputValue: config.inputValue || '',
+        inputPlaceholder: config.inputPlaceholder || '',
+        inputRequired: !!config.inputRequired,
+        inputError: '',
+        cancelText: config.cancelText || 'Cancel',
+        confirmText: config.confirmText || 'Confirm',
+        loading: false,
+        onConfirm: config.onConfirm || null,
+    };
+};
+
+const closeConfirmDialog = () => {
+    if (confirmDialog.value.loading) return;
+    confirmDialog.value.show = false;
+    confirmDialog.value.onConfirm = null;
+};
+
+const handleConfirmDialogSubmit = async () => {
+    if (confirmDialog.value.showInput && confirmDialog.value.inputRequired && !confirmDialog.value.inputValue.trim()) {
+        confirmDialog.value.inputError = 'This field is required.';
+        return;
+    }
+
+    if (typeof confirmDialog.value.onConfirm === 'function') {
+        confirmDialog.value.loading = true;
+        try {
+            await confirmDialog.value.onConfirm(confirmDialog.value.inputValue);
+            confirmDialog.value.show = false;
+        } catch (err) {
+            console.error('Action error:', err);
+        } finally {
+            confirmDialog.value.loading = false;
+        }
+    } else {
+        confirmDialog.value.show = false;
+    }
+};
+
+// Action Triggers using Popping Up Dialog
+const promptConfirmCancellation = (inquiry) => {
+    openConfirmDialog({
+        title: 'Confirm Citizen Cancellation',
+        subtitle: 'Official MEO Cancellation Review',
+        message: `Are you sure you want to confirm the cancellation for concern #${inquiry.tracking_token}? The concern will be officially closed and recorded as cancelled.`,
+        type: 'cancel',
+        inquiry: inquiry,
+        confirmText: 'Yes, Confirm Cancellation',
+        cancelText: 'Keep Active',
+        onConfirm: async () => {
+            await updateStatus(inquiry, 'cancelled');
+        },
+    });
+};
+
+const promptKeepActive = (inquiry) => {
+    openConfirmDialog({
+        title: 'Decline Cancellation Request',
+        subtitle: 'Keep Concern Active in Queue',
+        message: `Are you sure you want to decline the cancellation request for #${inquiry.tracking_token} and keep this inquiry active?`,
+        type: 'info',
+        inquiry: inquiry,
+        confirmText: 'Keep Concern Active',
+        cancelText: 'Back',
+        onConfirm: async () => {
+            await updateStatus(inquiry, inquiry.accepted_by ? 'accepted' : 'pending');
+        },
+    });
+};
+
+const promptAcceptConcern = (inquiry) => {
+    openConfirmDialog({
+        title: 'Accept Public Concern',
+        subtitle: 'Assignment & Inspection Queue',
+        message: `Accept concern #${inquiry.tracking_token} for municipal site inspection and action? Your officer account will be recorded as the handling personnel.`,
+        type: 'accept',
+        inquiry: inquiry,
+        confirmText: 'Accept Concern',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+            await updateStatus(inquiry, 'accepted');
+        },
+    });
+};
+
+const promptResolveConcern = (inquiry) => {
+    openConfirmDialog({
+        title: 'Mark Concern as Resolved',
+        subtitle: 'Resolution & Completion Report',
+        message: `Are you sure you want to mark concern #${inquiry.tracking_token} as resolved? You can also include closing remarks or inspection notes for the citizen and records below:`,
+        type: 'resolve',
+        inquiry: inquiry,
+        showInput: true,
+        inputLabel: 'Resolution Notes / Remarks (Optional)',
+        inputValue: inquiry.admin_notes || '',
+        inputPlaceholder: 'Enter resolution details (e.g. Site inspected, repair completed by MEO team)...',
+        confirmText: 'Mark Resolved',
+        cancelText: 'Cancel',
+        onConfirm: async (notes) => {
+            await updateStatus(inquiry, 'resolved', notes || null);
+        },
+    });
+};
+
+const promptCancelConcern = (inquiry) => {
+    openConfirmDialog({
+        title: 'Cancel Concern Inquiry',
+        subtitle: 'Municipal Engineering Office Action',
+        message: `Please specify the reason for cancelling concern #${inquiry.tracking_token}. This will update the inquiry status to Cancelled.`,
+        type: 'danger',
+        inquiry: inquiry,
+        showInput: true,
+        inputLabel: 'Cancellation Reason / Remarks',
+        inputRequired: true,
+        inputValue: inquiry.cancellation_reason || '',
+        inputPlaceholder: 'e.g. Duplicated report, work already addressed, or invalid site location...',
+        confirmText: 'Cancel Concern',
+        cancelText: 'Back',
+        onConfirm: async (reason) => {
+            await updateStatus(inquiry, 'cancelled', null, reason);
+        },
+    });
+};
+
+const promptReactivate = (inquiry) => {
+    openConfirmDialog({
+        title: 'Re-activate Concern',
+        subtitle: 'Move back to Active Inbox',
+        message: `Re-activate concern #${inquiry.tracking_token} and move it back to the active queue?`,
+        type: 'info',
+        inquiry: inquiry,
+        confirmText: 'Re-activate',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+            await updateStatus(inquiry, 'pending');
+        },
+    });
+};
+
+const promptEditNote = (inquiry) => {
+    openConfirmDialog({
+        title: 'Internal Engineering Remarks',
+        subtitle: 'Office Notes & Status Updates',
+        message: `Update internal notes, inspection findings, or assigned team remarks for concern #${inquiry.tracking_token}:`,
+        type: 'default',
+        inquiry: inquiry,
+        showInput: true,
+        inputLabel: 'Internal Remarks / Notes',
+        inputValue: inquiry.admin_notes || '',
+        inputPlaceholder: 'Enter internal notes...',
+        confirmText: 'Save Remarks',
+        cancelText: 'Cancel',
+        onConfirm: async (note) => {
+            await updateStatus(inquiry, inquiry.status, note);
+        },
+    });
+};
+
+const promptDeleteInquiry = (inquiry) => {
+    openConfirmDialog({
+        title: 'Delete Concern Record',
+        subtitle: 'Permanent Action Warning',
+        message: `Are you sure you want to permanently delete concern record #${inquiry.tracking_token}? This will remove the inquiry and associated photos from the database.`,
+        type: 'danger',
+        inquiry: inquiry,
+        confirmText: 'Yes, Delete Record',
+        cancelText: 'Keep Record',
+        onConfirm: async () => {
+            await deleteInquiry(inquiry);
+        },
+    });
+};
+
 // Lightbox state
 const activeLightboxImage = ref(null);
 const lightboxGallery = ref([]);
@@ -688,6 +1137,8 @@ watch(() => props.initialInquiries, (newVal) => {
 const statusClasses = {
     pending: 'bg-amber-50 text-amber-800 border-amber-300',
     accepted: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+    cancel_requested: 'bg-rose-50 text-rose-800 border-rose-300',
+    cancelled: 'bg-slate-100 text-slate-700 border-slate-300',
     resolved: 'bg-blue-50 text-blue-800 border-blue-300',
     declined: 'bg-slate-100 text-slate-600 border-slate-300',
 };
@@ -761,9 +1212,9 @@ const countByStatus = (st) => {
     return inquiries.value.filter(i => i.status === st).length;
 };
 
-// Active inquiries excludes resolved & declined from All Inquiries view
+// Active inquiries excludes resolved, declined, and cancelled from All Inquiries view
 const activeInquiriesCount = computed(() => {
-    return inquiries.value.filter(i => i.status !== 'resolved' && i.status !== 'declined').length;
+    return inquiries.value.filter(i => i.status !== 'resolved' && i.status !== 'declined' && i.status !== 'cancelled').length;
 });
 
 const uniqueLocations = computed(() => {
@@ -776,9 +1227,9 @@ const uniqueLocations = computed(() => {
 
 const filteredInquiries = computed(() => {
     let result = inquiries.value.filter(item => {
-        // When 'all' is selected: REMOVE RESOLVED & DECLINED (only active inbox)
+        // When 'all' is selected: REMOVE RESOLVED, DECLINED & CANCELLED (only active inbox)
         const matchesStatus = statusFilter.value === 'all' 
-            ? (item.status !== 'resolved' && item.status !== 'declined') 
+            ? (item.status !== 'resolved' && item.status !== 'declined' && item.status !== 'cancelled') 
             : item.status === statusFilter.value;
 
         const matchesLocation = locationFilter.value === 'all' || item.location === locationFilter.value;
@@ -794,6 +1245,8 @@ const filteredInquiries = computed(() => {
             (item.email && item.email.toLowerCase().includes(q)) ||
             (item.subject && item.subject.toLowerCase().includes(q)) ||
             (item.admin_notes && item.admin_notes.toLowerCase().includes(q)) ||
+            (item.cancellation_reason && item.cancellation_reason.toLowerCase().includes(q)) ||
+            (item.cancelled_by_user && item.cancelled_by_user.name.toLowerCase().includes(q)) ||
             (item.accepted_by_user && item.accepted_by_user.name.toLowerCase().includes(q)) ||
             (item.resolved_by_user && item.resolved_by_user.name.toLowerCase().includes(q)) ||
             (item.updated_by_user && item.updated_by_user.name.toLowerCase().includes(q)) ||
@@ -825,10 +1278,11 @@ const paginatedInquiries = computed(() => {
     return filteredInquiries.value.slice(startIndex.value, endIndex.value);
 });
 
-const updateStatus = async (inquiry, newStatus, notes = null) => {
+const updateStatus = async (inquiry, newStatus, notes = null, cancellationReason = null) => {
     try {
         const payload = { status: newStatus };
         if (notes !== null) payload.admin_notes = notes;
+        if (cancellationReason !== null) payload.cancellation_reason = cancellationReason;
 
         const response = await axios.patch(getStatusUrl(inquiry.id), payload);
 
@@ -844,19 +1298,11 @@ const updateStatus = async (inquiry, newStatus, notes = null) => {
         }
     } catch (err) {
         console.error('Failed to update status:', err);
-        alert('Failed to update status.');
+        alert(err.response?.data?.message || 'Failed to update status.');
     }
 };
 
-const promptEditNote = async (inquiry) => {
-    const note = prompt('Enter internal remarks / response for this concern:', inquiry.admin_notes || '');
-    if (note === null) return;
-    await updateStatus(inquiry, inquiry.status, note);
-};
-
 const deleteInquiry = async (inquiry) => {
-    if (!confirm(`Are you sure you want to delete concern inquiry #${inquiry.tracking_token}?`)) return;
-
     try {
         await axios.delete(getDestroyUrl(inquiry.id));
         inquiries.value = inquiries.value.filter(i => i.id !== inquiry.id);

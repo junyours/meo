@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 
+// ================= STATE =================
 const activeSection = ref('slideshow'); // 'slideshow' | 'achievements'
 
 const toast = ref({ show: false, message: '', type: 'success' });
@@ -12,7 +13,7 @@ const showToast = (message, type = 'success') => {
     toastTimeout = setTimeout(() => { toast.value.show = false; }, 3500);
 };
 
-// Welcome content record from database
+// Welcome content model
 const welcomeContent = ref({
     id: null,
     hero_title: 'Public Infrastructure\nTransparency Portal',
@@ -22,7 +23,7 @@ const welcomeContent = ref({
     additional_images: [],
     slideshow_images: [],
     achievement_images: [],
-    is_active: true
+    is_active: true,
 });
 
 const slideshowImages = ref([]);
@@ -51,7 +52,7 @@ const startPreviewTimer = () => {
     if (slideshowImages.value.length > 1) {
         slideshowTimer = setInterval(() => {
             currentSlide.value = (currentSlide.value + 1) % slideshowImages.value.length;
-        }, 4000);
+        }, 4500);
     }
 };
 
@@ -79,9 +80,9 @@ const achievementFilter = ref('all');
 const achievementCategories = [
     { value: 'all', label: 'All Items' },
     { value: 'completed_project', label: 'Completed Projects' },
-    { value: 'turnover', label: 'Turnovers & Inaugurations' },
-    { value: 'achievement', label: 'Achievements & Awards' },
-    { value: 'milestone', label: 'Key Milestones' },
+    { value: 'turnover', label: 'Turnovers' },
+    { value: 'achievement', label: 'Achievements' },
+    { value: 'milestone', label: 'Milestones' },
 ];
 
 const filteredAchievements = computed(() => {
@@ -106,11 +107,11 @@ const loadContent = async () => {
         }
     } catch (error) {
         console.error('Failed to load welcome content:', error);
-        showToast('Failed to load portal content', 'error');
+        showToast('Failed to load portal media content', 'error');
     }
 };
 
-// Save Hero Slideshow specifically
+// Save Hero Slideshow
 const saveSlideshow = async (silent = false) => {
     isSavingSlideshow.value = true;
     try {
@@ -119,7 +120,7 @@ const saveSlideshow = async (silent = false) => {
         const payload = {
             ...welcomeContent.value,
             slideshow_images: slideshowImages.value,
-            achievement_images: achievementImages.value
+            achievement_images: achievementImages.value,
         };
 
         if (welcomeContent.value.id) {
@@ -130,7 +131,7 @@ const saveSlideshow = async (silent = false) => {
         }
 
         if (!silent) {
-            showToast('Hero slideshow saved successfully');
+            showToast('Hero slideshow updated successfully');
         }
         startPreviewTimer();
     } catch (error) {
@@ -141,7 +142,7 @@ const saveSlideshow = async (silent = false) => {
     }
 };
 
-// Save Completed Projects & Achievements specifically
+// Save Achievements
 const saveAchievements = async (silent = false) => {
     isSavingAchievement.value = true;
     try {
@@ -150,7 +151,7 @@ const saveAchievements = async (silent = false) => {
         const payload = {
             ...welcomeContent.value,
             slideshow_images: slideshowImages.value,
-            achievement_images: achievementImages.value
+            achievement_images: achievementImages.value,
         };
 
         if (welcomeContent.value.id) {
@@ -161,11 +162,11 @@ const saveAchievements = async (silent = false) => {
         }
 
         if (!silent) {
-            showToast('Completed projects & achievements saved successfully');
+            showToast('Projects and achievements updated successfully');
         }
     } catch (error) {
         console.error('Failed to save achievements:', error);
-        showToast('Failed to save completed projects & achievements', 'error');
+        showToast('Failed to save achievements', 'error');
     } finally {
         isSavingAchievement.value = false;
     }
@@ -194,14 +195,14 @@ const uploadSlideshowFiles = async (files) => {
 
         try {
             const response = await window.axios.post('/superadmin/welcome-content/upload-image', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
 
             const newImage = {
                 id: Date.now() + Math.random(),
                 url: response.data.url,
                 type: 'slideshow',
-                name: file.name
+                name: file.name,
             };
 
             slideshowImages.value.push(newImage);
@@ -216,12 +217,12 @@ const uploadSlideshowFiles = async (files) => {
     if (slideshowFileInput.value) slideshowFileInput.value.value = '';
 
     if (uploadCount > 0) {
-        showToast(`Uploaded ${uploadCount} new slideshow image${uploadCount > 1 ? 's' : ''}`);
+        showToast(`Uploaded ${uploadCount} slide image${uploadCount > 1 ? 's' : ''}`);
         await saveSlideshow(true);
     }
 };
 
-// Upload Achievements & Completed Projects Files
+// Upload Achievement Files
 const uploadAchievementFiles = async (files) => {
     if (!files || files.length === 0) return;
 
@@ -244,10 +245,9 @@ const uploadAchievementFiles = async (files) => {
 
         try {
             const response = await window.axios.post('/superadmin/welcome-content/upload-image', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
 
-            // Derive clean title from filename
             const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
 
             const newItem = {
@@ -255,13 +255,13 @@ const uploadAchievementFiles = async (files) => {
                 url: response.data.url,
                 type: 'achievement',
                 title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
-                category: 'completed_project', // default category
+                category: 'completed_project',
                 year: new Date().getFullYear().toString(),
                 location: 'Municipality of Opol',
                 caption: '',
             };
 
-            achievementImages.value.unshift(newItem);
+            achievementImages.value.push(newItem);
             uploadCount++;
         } catch (error) {
             console.error('Upload error for achievement:', file.name, error);
@@ -273,12 +273,12 @@ const uploadAchievementFiles = async (files) => {
     if (achievementFileInput.value) achievementFileInput.value.value = '';
 
     if (uploadCount > 0) {
-        showToast(`Added ${uploadCount} completed project / achievement photo${uploadCount > 1 ? 's' : ''}`);
+        showToast(`Uploaded ${uploadCount} project photo${uploadCount > 1 ? 's' : ''}`);
         await saveAchievements(true);
     }
 };
 
-// Reordering slideshow
+// Reorder slide
 const moveSlide = async (index, direction) => {
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= slideshowImages.value.length) return;
@@ -288,14 +288,12 @@ const moveSlide = async (index, direction) => {
     items.splice(newIndex, 0, movedItem);
     slideshowImages.value = items;
 
-    showToast(`Reordered slide`, 'info');
+    showToast('Slide reordered');
     await saveSlideshow(true);
 };
 
-// Delete slideshow
+// Delete slide
 const deleteSlide = async (id) => {
-    if (!confirm('Remove this slide from the hero slideshow?')) return;
-
     slideshowImages.value = slideshowImages.value.filter(img => img.id !== id);
     if (currentSlide.value >= slideshowImages.value.length) {
         currentSlide.value = Math.max(0, slideshowImages.value.length - 1);
@@ -304,7 +302,7 @@ const deleteSlide = async (id) => {
     await saveSlideshow(true);
 };
 
-// Reordering achievements
+// Reorder achievement
 const moveAchievement = async (index, direction) => {
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= achievementImages.value.length) return;
@@ -314,23 +312,21 @@ const moveAchievement = async (index, direction) => {
     items.splice(newIndex, 0, movedItem);
     achievementImages.value = items;
 
-    showToast(`Reordered item`, 'info');
+    showToast('Item reordered');
     await saveAchievements(true);
 };
 
-// Delete achievement item
+// Delete achievement
 const deleteAchievement = async (id) => {
-    if (!confirm('Delete this photo from the completed projects & achievements compilation?')) return;
-
     achievementImages.value = achievementImages.value.filter(item => item.id !== id);
     if (editingAchievement.value?.id === id) {
         editingAchievement.value = null;
     }
-    showToast('Photo removed from achievements compilation');
+    showToast('Photo removed from achievements');
     await saveAchievements(true);
 };
 
-// Save edited achievement item
+// Save edited achievement
 const saveEditedAchievement = async () => {
     if (!editingAchievement.value) return;
 
@@ -339,7 +335,7 @@ const saveEditedAchievement = async () => {
         achievementImages.value[index] = { ...editingAchievement.value };
     }
     editingAchievement.value = null;
-    showToast('Achievement details updated');
+    showToast('Project details updated');
     await saveAchievements(true);
 };
 
@@ -353,151 +349,227 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="w-full flex-1 space-y-6">
-        <!-- Toast Notification -->
+    <div class="w-full space-y-5">
+        
+        <!-- Toast Feedback -->
         <transition
-            enter-active-class="transform ease-out duration-300 transition"
-            enter-from-class="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
-            enter-to-class="translate-y-0 opacity-100 sm:translate-x-0"
-            leave-active-class="transition ease-in duration-100"
+            enter-active-class="transition ease-out duration-200"
+            enter-from-class="opacity-0 translate-y-1"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition ease-in duration-150"
             leave-from-class="opacity-100"
             leave-to-class="opacity-0"
         >
             <div
                 v-if="toast.show"
                 :class="[
-                    'fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all',
-                    toast.type === 'error'
-                        ? 'bg-red-50 border-red-200 text-red-800'
-                        : toast.type === 'info'
-                        ? 'bg-blue-50 border-blue-200 text-blue-800'
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    'fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-lg shadow-lg border text-sm font-medium flex items-center gap-2.5',
+                    toast.type === 'error' ? 'bg-red-900 text-white border-red-800' : 'bg-slate-900 text-white border-slate-800'
                 ]"
             >
-                <svg v-if="toast.type === 'error'" class="w-5 h-5 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <svg v-else-if="toast.type === 'info'" class="w-5 h-5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <svg v-else class="w-5 h-5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <i :class="toast.type === 'error' ? 'ri-error-warning-line' : 'ri-check-line'"></i>
                 <span>{{ toast.message }}</span>
             </div>
         </transition>
 
-        <!-- Header Card with Section Switcher -->
-        <div class="bg-white border border-slate-200 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <!-- 1. CLEAN TOP HEADER -->
+        <div class="bg-white border border-gray-200 rounded-xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-                <div class="flex items-center gap-2.5 mb-1">
-                    <div class="p-2 bg-red-50 text-red-600 border border-red-100">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <h2 class="text-lg sm:text-xl font-bold text-slate-900">Portal Media & Visuals Management</h2>
-                </div>
-                <p class="text-xs sm:text-sm text-slate-500">
-                    Upload and manage hero background slideshows and the official compilation of completed infrastructure projects & achievements.
+                <h1 class="text-xl font-bold text-gray-900 tracking-tight">Portal Media & Visuals</h1>
+                <p class="text-sm text-gray-500 mt-0.5">
+                    Manage public landing page hero carousel slides and completed infrastructure achievements.
                 </p>
             </div>
 
-            <!-- Global Action & Section Switcher -->
-            <div class="flex flex-wrap items-center gap-3">
-                <!-- Tab switch -->
-                <div class="inline-flex p-1 bg-slate-100 border border-slate-200">
-                    <button
-                        @click="activeSection = 'slideshow'"
-                        :class="[
-                            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer',
-                            activeSection === 'slideshow'
-                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
-                                : 'text-slate-600 hover:text-slate-900'
-                        ]"
-                    >
-                        <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <span>Hero Slideshow</span>
-                        <span class="px-1.5 py-0.2 bg-red-100 text-red-700 rounded-full text-[10px]">{{ slideshowImages.length }}</span>
-                    </button>
-                    <button
-                        @click="activeSection = 'achievements'"
-                        :class="[
-                            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer',
-                            activeSection === 'achievements'
-                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
-                                : 'text-slate-600 hover:text-slate-900'
-                        ]"
-                    >
-                        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                        </svg>
-                        <span>Completed Projects & Achievements</span>
-                        <span class="px-1.5 py-0.2 bg-emerald-100 text-emerald-700 rounded-full text-[10px]">{{ achievementImages.length }}</span>
-                    </button>
-                </div>
-
-                <!-- Separate Save Button for Slideshow -->
+            <!-- Save Action Button -->
+            <div>
                 <button
                     v-if="activeSection === 'slideshow'"
                     @click="saveSlideshow(false)"
                     :disabled="isSavingSlideshow || isUploadingSlideshow"
-                    class="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer shrink-0"
+                    class="w-full sm:w-auto px-4 py-2 bg-gray-900 hover:bg-gray-800 active:bg-black text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
                 >
-                    <svg v-if="isSavingSlideshow" class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>{{ isSavingSlideshow ? 'Saving Slideshow...' : 'Save Slideshow' }}</span>
+                    <i :class="['text-sm', isSavingSlideshow ? 'ri-loader-4-line animate-spin' : 'ri-save-line']"></i>
+                    <span>{{ isSavingSlideshow ? 'Saving Slides...' : 'Save Slideshow' }}</span>
                 </button>
 
-                <!-- Separate Save Button for Achievements -->
                 <button
-                    v-else-if="activeSection === 'achievements'"
+                    v-else
                     @click="saveAchievements(false)"
                     :disabled="isSavingAchievement || isUploadingAchievement"
-                    class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer shrink-0"
+                    class="w-full sm:w-auto px-4 py-2 bg-gray-900 hover:bg-gray-800 active:bg-black text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
                 >
-                    <svg v-if="isSavingAchievement" class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>{{ isSavingAchievement ? 'Saving Achievements...' : 'Save Achievements' }}</span>
+                    <i :class="['text-sm', isSavingAchievement ? 'ri-loader-4-line animate-spin' : 'ri-save-line']"></i>
+                    <span>{{ isSavingAchievement ? 'Saving Gallery...' : 'Save Achievements' }}</span>
                 </button>
             </div>
         </div>
 
-        <!-- SECTION 1: HERO SLIDESHOW -->
-        <div v-if="activeSection === 'slideshow'" class="space-y-6">
-            <!-- Upload Dropzone for Slideshow -->
-            <div class="bg-white border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+        <!-- 2. DEDICATED PROFESSIONAL TAB BAR -->
+        <div class="bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden">
+            <div class="flex border-b border-gray-200 overflow-x-auto">
+                <!-- Tab 1: Hero Slideshow -->
+                <button
+                    @click="activeSection = 'slideshow'"
+                    :class="[
+                        'flex-1 min-w-[200px] sm:min-w-[240px] px-5 py-3.5 text-left border-b-2 transition-all flex items-center gap-3 cursor-pointer group',
+                        activeSection === 'slideshow'
+                            ? 'border-red-600 bg-red-50/20 text-gray-900'
+                            : 'border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-50/70'
+                    ]"
+                >
+                    <div
+                        :class="[
+                            'w-9 h-9 rounded-lg flex items-center justify-center text-base transition-colors shrink-0',
+                            activeSection === 'slideshow'
+                                ? 'bg-red-100 text-red-600'
+                                : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200 group-hover:text-gray-600'
+                        ]"
+                    >
+                        <i class="ri-slideshow-3-line"></i>
+                    </div>
+
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span :class="['text-sm font-semibold truncate', activeSection === 'slideshow' ? 'text-gray-900 font-bold' : 'text-gray-600']">
+                                Hero Slideshow
+                            </span>
+                            <span
+                                :class="[
+                                    'px-2 py-0.2 text-[10px] font-semibold rounded-full font-mono',
+                                    activeSection === 'slideshow'
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-gray-100 text-gray-500'
+                                ]"
+                            >
+                                {{ slideshowImages.length }}
+                            </span>
+                        </div>
+                        <p class="text-[11px] text-gray-400 truncate">Landing page carousel background</p>
+                    </div>
+                </button>
+
+                <!-- Tab 2: Achievements & Completed Projects -->
+                <button
+                    @click="activeSection = 'achievements'"
+                    :class="[
+                        'flex-1 min-w-[220px] sm:min-w-[260px] px-5 py-3.5 text-left border-b-2 transition-all flex items-center gap-3 cursor-pointer group',
+                        activeSection === 'achievements'
+                            ? 'border-emerald-600 bg-emerald-50/20 text-gray-900'
+                            : 'border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-50/70'
+                    ]"
+                >
+                    <div
+                        :class="[
+                            'w-9 h-9 rounded-lg flex items-center justify-center text-base transition-colors shrink-0',
+                            activeSection === 'achievements'
+                                ? 'bg-emerald-100 text-emerald-600'
+                                : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200 group-hover:text-gray-600'
+                        ]"
+                    >
+                        <i class="ri-medal-line"></i>
+                    </div>
+
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span :class="['text-sm font-semibold truncate', activeSection === 'achievements' ? 'text-gray-900 font-bold' : 'text-gray-600']">
+                                Achievements & Gallery
+                            </span>
+                            <span
+                                :class="[
+                                    'px-2 py-0.2 text-[10px] font-semibold rounded-full font-mono',
+                                    activeSection === 'achievements'
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-gray-100 text-gray-500'
+                                ]"
+                            >
+                                {{ achievementImages.length }}
+                            </span>
+                        </div>
+                        <p class="text-[11px] text-gray-400 truncate">Completed projects compilation</p>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- ================= SECTION 1: HERO SLIDESHOW ================= -->
+        <div v-if="activeSection === 'slideshow'" class="space-y-5">
+            
+            <!-- Live Preview Carousel Banner -->
+            <div v-if="slideshowImages.length > 0" class="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-3">
                 <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        Upload Hero Slideshow Images
-                    </h3>
-                    <span class="text-xs text-slate-400">Background slides for portal header</span>
+                    <div>
+                        <h2 class="text-sm font-bold text-gray-900">Live Header Preview</h2>
+                        <p class="text-xs text-gray-500">Simulates how slides transition on the citizen portal header</p>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button
+                            @click="prevSlide"
+                            class="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"
+                            title="Previous slide"
+                        >
+                            <i class="ri-arrow-left-s-line text-sm"></i>
+                        </button>
+                        <span class="text-xs font-mono text-gray-600 font-medium px-1">
+                            {{ currentSlide + 1 }} / {{ slideshowImages.length }}
+                        </span>
+                        <button
+                            @click="nextSlide"
+                            class="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"
+                            title="Next slide"
+                        >
+                            <i class="ri-arrow-right-s-line text-sm"></i>
+                        </button>
+                    </div>
                 </div>
 
+                <!-- Preview Frame -->
+                <div class="relative w-full h-56 sm:h-72 md:h-80 rounded-lg overflow-hidden bg-slate-900 border border-gray-200 group">
+                    <template v-for="(img, idx) in slideshowImages" :key="'prev-' + img.id">
+                        <div
+                            v-show="currentSlide === idx"
+                            class="absolute inset-0 transition-opacity duration-700 ease-in-out"
+                        >
+                            <img :src="img.url" :alt="'Slide ' + (idx + 1)" class="w-full h-full object-cover" />
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/30"></div>
+                        </div>
+                    </template>
+
+                    <!-- Mock Caption -->
+                    <div class="absolute bottom-4 left-4 right-4 text-white z-10 pointer-events-none">
+                        <span class="inline-block px-2 py-0.5 bg-red-600 text-white rounded text-[10px] font-semibold uppercase tracking-wider mb-1">
+                            Active Slide {{ currentSlide + 1 }}
+                        </span>
+                        <p class="text-sm font-semibold opacity-95">Public Infrastructure Transparency Portal</p>
+                    </div>
+
+                    <!-- Slide dots -->
+                    <div class="absolute bottom-3 right-4 flex items-center gap-1.5 z-20">
+                        <button
+                            v-for="(_, idx) in slideshowImages"
+                            :key="'dot-' + idx"
+                            @click="currentSlide = idx"
+                            :class="[
+                                'h-1.5 rounded-full transition-all cursor-pointer',
+                                currentSlide === idx ? 'w-5 bg-red-500' : 'w-1.5 bg-white/60 hover:bg-white'
+                            ]"
+                        ></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Dropzone -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
                 <div
                     @dragover.prevent="isDraggingSlideshow = true"
                     @dragleave.prevent="isDraggingSlideshow = false"
                     @drop.prevent="isDraggingSlideshow = false; uploadSlideshowFiles($event.dataTransfer.files)"
                     :class="[
-                        'relative border-2 border-dashed p-7 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3',
+                        'relative border-2 border-dashed rounded-lg p-6 sm:p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2.5',
                         isDraggingSlideshow
-                            ? 'border-red-500 bg-red-50/50 scale-[0.99]'
-                            : 'border-slate-300 bg-slate-50/50 hover:bg-white hover:border-slate-400'
+                            ? 'border-red-500 bg-red-50/50'
+                            : 'border-gray-300 bg-gray-50/50 hover:bg-white hover:border-gray-400'
                     ]"
                     @click="$refs.slideshowFileInput.click()"
                 >
@@ -510,223 +582,105 @@ onUnmounted(() => {
                         @change="uploadSlideshowFiles($event.target.files)"
                     />
 
-                    <div class="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center shadow-inner">
-                        <svg v-if="!isUploadingSlideshow" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <svg v-else class="w-6 h-6 animate-spin text-red-600" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
+                    <div class="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center">
+                        <i :class="['text-xl', isUploadingSlideshow ? 'ri-loader-4-line animate-spin' : 'ri-upload-cloud-2-line']"></i>
                     </div>
 
-                    <div class="space-y-1">
-                        <p class="text-xs sm:text-sm font-semibold text-slate-800">
-                            <span class="text-red-600 underline">Click to upload</span> or drag and drop slideshow images here
+                    <div class="space-y-0.5">
+                        <p class="text-xs sm:text-sm font-semibold text-gray-800">
+                            <span class="text-red-600 hover:underline">Click to upload</span> or drag and drop slide images
                         </p>
-                        <p class="text-[11px] text-slate-400">
-                            PNG, JPG, JPEG, or WEBP (Max 5MB each). Multiple images supported.
+                        <p class="text-[11px] text-gray-400">
+                            Supports PNG, JPG, JPEG, or WEBP (Max 5MB each). Multiple images allowed.
                         </p>
                     </div>
 
                     <span
                         v-if="isUploadingSlideshow"
-                        class="inline-flex items-center gap-2 px-3 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded-full animate-pulse"
+                        class="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full animate-pulse mt-1"
                     >
-                        Uploading slide(s)...
+                        Uploading slide images...
                     </span>
                 </div>
             </div>
 
-            <!-- Live Preview Carousel Widget -->
-            <div v-if="slideshowImages.length > 0" class="bg-white border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+            <!-- Slides Grid Section -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-4">
                 <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            Live Landing Page Banner Preview
-                        </h3>
-                        <span class="text-[11px] font-medium text-slate-400">(Cycles every 4s)</span>
-                    </div>
-
-                    <!-- Slide counter & navigation buttons -->
-                    <div class="flex items-center gap-2">
-                        <button
-                            @click="prevSlide"
-                            class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors"
-                            title="Previous slide"
-                        >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-                        </button>
-                        <span class="text-xs font-bold text-slate-600 tabular-nums px-1">
-                            {{ currentSlide + 1 }} / {{ slideshowImages.length }}
-                        </span>
-                        <button
-                            @click="nextSlide"
-                            class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors"
-                            title="Next slide"
-                        >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Preview Screen Frame -->
-                <div class="relative w-full h-56 sm:h-80 md:h-96 overflow-hidden bg-slate-900 border border-slate-200 shadow-inner group">
-                    <template v-for="(img, idx) in slideshowImages" :key="'prev-' + img.id">
-                        <div
-                            v-show="currentSlide === idx"
-                            class="absolute inset-0 transition-opacity duration-700 ease-in-out"
-                        >
-                            <img
-                                :src="img.url"
-                                :alt="'Slide ' + (idx + 1)"
-                                class="w-full h-full object-cover"
-                            />
-                            <!-- Dark gradient overlay -->
-                            <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-black/30"></div>
-                        </div>
-                    </template>
-
-                    <!-- Landing text mock simulation -->
-                    <div class="absolute bottom-4 left-4 right-4 text-white z-10 pointer-events-none drop-shadow-md">
-                        <span class="inline-block px-2 py-0.5 bg-red-600 text-white rounded text-[9px] font-bold uppercase tracking-wider mb-1">
-                            Slide {{ currentSlide + 1 }} Active
-                        </span>
-                        <p class="text-xs sm:text-sm font-semibold opacity-90 truncate">Public Infrastructure Transparency Portal</p>
-                    </div>
-
-                    <!-- Indicator dots -->
-                    <div class="absolute bottom-3 right-4 flex items-center gap-1.5 z-20">
-                        <button
-                            v-for="(_, idx) in slideshowImages"
-                            :key="'dot-' + idx"
-                            @click="currentSlide = idx"
-                            :class="[
-                                'h-1.5 rounded-full transition-all',
-                                currentSlide === idx ? 'w-5 bg-red-500' : 'w-1.5 bg-white/60 hover:bg-white'
-                            ]"
-                        ></button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Slides List / Grid Section -->
-            <div class="bg-white border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
-                <div class="flex items-center justify-between gap-3">
                     <div>
-                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                            </svg>
-                            Current Slideshow Images
-                        </h3>
-                        <p class="text-[11px] text-slate-500 mt-0.5">Use the arrow buttons to reorder how images appear on the welcome page header.</p>
+                        <h2 class="text-sm font-bold text-gray-900">Current Slide Deck ({{ slideshowImages.length }})</h2>
+                        <p class="text-xs text-gray-500">Order from left to right corresponds to the display sequence</p>
                     </div>
-
-                    <button
-                        @click="saveSlideshow(false)"
-                        :disabled="isSavingSlideshow || isUploadingSlideshow"
-                        class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer shrink-0"
-                    >
-                        <svg v-if="isSavingSlideshow" class="animate-spin -ml-0.5 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                        </svg>
-                        <span>{{ isSavingSlideshow ? 'Saving...' : 'Save Slideshow' }}</span>
-                    </button>
                 </div>
 
                 <!-- Empty State -->
-                <div v-if="slideshowImages.length === 0" class="text-center py-12 px-4 border border-dashed border-slate-200 bg-slate-50/50">
-                    <div class="mx-auto w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <h4 class="text-sm font-semibold text-slate-700 mb-1">No slideshow images yet</h4>
-                    <p class="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-                        Upload images above to create an automated background slideshow on the portal home page.
-                    </p>
+                <div v-if="slideshowImages.length === 0" class="text-center py-10 px-4 border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
+                    <i class="ri-image-line text-2xl text-gray-400 block mb-1"></i>
+                    <p class="text-xs font-semibold text-gray-700">No slides configured</p>
+                    <p class="text-[11px] text-gray-400 mt-0.5 mb-3">Upload images above to activate the hero carousel.</p>
                     <button
                         @click="$refs.slideshowFileInput.click()"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors shadow-sm"
+                        class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition-colors cursor-pointer"
                     >
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                        </svg>
-                        Upload First Slide
+                        Upload Slide
                     </button>
                 </div>
 
-                <!-- Slides Grid -->
-                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4">
+                <!-- Cards Grid -->
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3.5">
                     <div
                         v-for="(img, idx) in slideshowImages"
                         :key="img.id"
-                        class="group relative border border-slate-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col"
+                        class="group relative border border-gray-200 rounded-lg bg-white overflow-hidden shadow-2xs hover:shadow-sm transition-all flex flex-col"
                     >
-                        <div class="relative h-44 bg-slate-100 overflow-hidden">
-                            <img
-                                :src="img.url"
-                                :alt="'Slide ' + (idx + 1)"
-                                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
+                        <!-- Thumbnail -->
+                        <div class="relative h-40 bg-gray-100 overflow-hidden">
+                            <img :src="img.url" :alt="'Slide ' + (idx + 1)" class="w-full h-full object-cover" />
 
-                            <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                                <span class="px-2 py-0.5 bg-black/75 backdrop-blur-md text-white text-[10px] font-bold rounded-md uppercase tracking-wider">
-                                    Slide #{{ idx + 1 }}
+                            <div class="absolute top-2 left-2 flex items-center gap-1">
+                                <span class="px-2 py-0.5 bg-black/75 text-white text-[10px] font-semibold rounded font-mono">
+                                    #{{ idx + 1 }}
                                 </span>
-                                <span v-if="idx === 0" class="px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-bold rounded-md uppercase tracking-wider">
-                                    First Slide
+                                <span v-if="idx === 0" class="px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-semibold rounded uppercase">
+                                    First
                                 </span>
                             </div>
 
                             <button
                                 @click="previewImage = img.url"
-                                class="absolute top-2.5 right-2.5 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                                class="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                                 title="View full image"
                             >
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                                </svg>
+                                <i class="ri-zoom-in-line text-xs"></i>
                             </button>
                         </div>
 
-                        <div class="p-3 bg-white border-t border-slate-100 flex items-center justify-between gap-2 mt-auto">
+                        <!-- Card Controls -->
+                        <div class="p-2.5 bg-white border-t border-gray-100 flex items-center justify-between gap-1 mt-auto">
                             <div class="flex items-center gap-1">
                                 <button
                                     @click="moveSlide(idx, -1)"
                                     :disabled="idx === 0"
-                                    class="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                    title="Move Left"
+                                    class="p-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                    title="Move left"
                                 >
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                                    <i class="ri-arrow-left-s-line text-xs"></i>
                                 </button>
                                 <button
                                     @click="moveSlide(idx, 1)"
                                     :disabled="idx === slideshowImages.length - 1"
-                                    class="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                    title="Move Right"
+                                    class="p-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                    title="Move right"
                                 >
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                                    <i class="ri-arrow-right-s-line text-xs"></i>
                                 </button>
                             </div>
 
                             <button
                                 @click="deleteSlide(img.id)"
-                                class="inline-flex items-center gap-1 px-2.5 py-1 text-red-600 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors"
-                                title="Delete slide"
+                                class="text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors cursor-pointer"
                             >
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                <span>Delete</span>
+                                Delete
                             </button>
                         </div>
                     </div>
@@ -734,31 +688,20 @@ onUnmounted(() => {
             </div>
         </div>
 
-        <!-- SECTION 2: COMPILATION OF COMPLETED PROJECTS & ACHIEVEMENTS -->
-        <div v-else-if="activeSection === 'achievements'" class="space-y-6">
-            <!-- Upload Dropzone for Achievements -->
-            <div class="bg-white border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            Upload Pictures for Completed Projects & Achievements Compilation
-                        </h3>
-                        <p class="text-xs text-slate-400 mt-0.5">Showcase completed infrastructure projects, official turnovers, awards, and engineering achievements.</p>
-                    </div>
-                </div>
-
+        <!-- ================= SECTION 2: ACHIEVEMENTS & COMPILATION ================= -->
+        <div v-else-if="activeSection === 'achievements'" class="space-y-5">
+            
+            <!-- Upload Dropzone -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
                 <div
                     @dragover.prevent="isDraggingAchievement = true"
                     @dragleave.prevent="isDraggingAchievement = false"
                     @drop.prevent="isDraggingAchievement = false; uploadAchievementFiles($event.dataTransfer.files)"
                     :class="[
-                        'relative border-2 border-dashed p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3',
+                        'relative border-2 border-dashed rounded-lg p-6 sm:p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2.5',
                         isDraggingAchievement
-                            ? 'border-emerald-500 bg-emerald-50/50 scale-[0.99]'
-                            : 'border-slate-300 bg-slate-50/50 hover:bg-white hover:border-slate-400'
+                            ? 'border-emerald-500 bg-emerald-50/50'
+                            : 'border-gray-300 bg-gray-50/50 hover:bg-white hover:border-gray-400'
                     ]"
                     @click="$refs.achievementFileInput.click()"
                 >
@@ -771,215 +714,144 @@ onUnmounted(() => {
                         @change="uploadAchievementFiles($event.target.files)"
                     />
 
-                    <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-inner">
-                        <svg v-if="!isUploadingAchievement" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                        </svg>
-                        <svg v-else class="w-6 h-6 animate-spin text-emerald-600" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
+                    <div class="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <i :class="['text-xl', isUploadingAchievement ? 'ri-loader-4-line animate-spin' : 'ri-image-add-line']"></i>
                     </div>
 
-                    <div class="space-y-1">
-                        <p class="text-xs sm:text-sm font-semibold text-slate-800">
-                            <span class="text-emerald-600 underline">Click to upload photos</span> or drag & drop images here
+                    <div class="space-y-0.5">
+                        <p class="text-xs sm:text-sm font-semibold text-gray-800">
+                            <span class="text-emerald-600 hover:underline">Click to upload</span> project & achievement photos
                         </p>
-                        <p class="text-[11px] text-slate-400">
-                            Select one or multiple project/achievement photos (PNG, JPG, WEBP up to 5MB each).
+                        <p class="text-[11px] text-gray-400">
+                            Upload photos for completed projects, ribbon-cuttings, and awards (PNG, JPG, WEBP up to 5MB).
                         </p>
                     </div>
 
                     <span
                         v-if="isUploadingAchievement"
-                        class="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-full animate-pulse"
+                        class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full animate-pulse mt-1"
                     >
                         Uploading photos...
                     </span>
                 </div>
             </div>
 
-            <!-- Achievement Items Gallery & Management -->
-            <div class="bg-white border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <!-- Gallery & Management Cards -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
                     <div>
-                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                            </svg>
-                            Compilation Gallery
-                        </h3>
-                        <p class="text-[11px] text-slate-500 mt-0.5">Click the "Edit Details" button on any card to update title, location, category, or caption.</p>
+                        <h2 class="text-sm font-bold text-gray-900">Project & Achievement Gallery ({{ filteredAchievements.length }})</h2>
+                        <p class="text-xs text-gray-500">Edit titles, categories, years, and captions for each photo</p>
                     </div>
 
-                    <!-- Category Filter Buttons & Save Achievements Button -->
-                    <div class="flex flex-wrap items-center gap-2">
-                        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                            <button
-                                v-for="cat in achievementCategories"
-                                :key="cat.value"
-                                @click="achievementFilter = cat.value"
-                                :class="[
-                                    'px-3 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap',
-                                    achievementFilter === cat.value
-                                        ? 'bg-emerald-600 text-white shadow-sm'
-                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                ]"
-                            >
-                                {{ cat.label }}
-                            </button>
-                        </div>
-
+                    <!-- Category Filter Pills -->
+                    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                         <button
-                            @click="saveAchievements(false)"
-                            :disabled="isSavingAchievement || isUploadingAchievement"
-                            class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer shrink-0 ml-auto sm:ml-0"
+                            v-for="cat in achievementCategories"
+                            :key="cat.value"
+                            @click="achievementFilter = cat.value"
+                            :class="[
+                                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer',
+                                achievementFilter === cat.value
+                                    ? 'bg-gray-900 text-white'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            ]"
                         >
-                            <svg v-if="isSavingAchievement" class="animate-spin -ml-0.5 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>{{ isSavingAchievement ? 'Saving...' : 'Save Achievements' }}</span>
+                            {{ cat.label }}
                         </button>
                     </div>
                 </div>
 
                 <!-- Empty State -->
-                <div v-if="filteredAchievements.length === 0" class="text-center py-12 px-4 border border-dashed border-slate-200 bg-slate-50/50">
-                    <div class="mx-auto w-12 h-12 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-3">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                        </svg>
-                    </div>
-                    <h4 class="text-sm font-semibold text-slate-700 mb-1">No pictures in this compilation category</h4>
-                    <p class="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-                        Upload photos above to display completed municipal projects, ribbon cuttings, and official engineering achievements on the public portal.
-                    </p>
+                <div v-if="filteredAchievements.length === 0" class="text-center py-10 px-4 border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
+                    <i class="ri-folder-image-line text-2xl text-gray-400 block mb-1"></i>
+                    <p class="text-xs font-semibold text-gray-700">No photos in this category</p>
+                    <p class="text-[11px] text-gray-400 mt-0.5 mb-3">Upload project photos or switch categories above.</p>
                     <button
                         @click="$refs.achievementFileInput.click()"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors shadow-sm"
+                        class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors cursor-pointer"
                     >
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                        </svg>
-                        Upload Project Pictures
+                        Upload Photos
                     </button>
                 </div>
 
                 <!-- Gallery Cards Grid -->
-                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4">
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3.5">
                     <div
                         v-for="(item, idx) in filteredAchievements"
                         :key="item.id"
-                        class="group relative border border-slate-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col"
+                        class="group relative border border-gray-200 rounded-lg bg-white overflow-hidden shadow-2xs hover:shadow-sm transition-all flex flex-col"
                     >
                         <!-- Thumbnail -->
-                        <div class="relative h-48 bg-slate-100 overflow-hidden">
-                            <img
-                                :src="item.url"
-                                :alt="item.title || 'Completed Project'"
-                                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
+                        <div class="relative h-44 bg-gray-100 overflow-hidden">
+                            <img :src="item.url" :alt="item.title || 'Project'" class="w-full h-full object-cover" />
 
                             <!-- Category Badge -->
-                            <div class="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start">
-                                <span
-                                    :class="[
-                                        'px-2 py-0.5 text-white text-[10px] font-bold rounded-md uppercase tracking-wider backdrop-blur-md shadow-sm',
-                                        item.category === 'achievement'
-                                            ? 'bg-amber-600/90'
-                                            : item.category === 'turnover'
-                                            ? 'bg-blue-600/90'
-                                            : item.category === 'milestone'
-                                            ? 'bg-purple-600/90'
-                                            : 'bg-emerald-600/90'
-                                    ]"
-                                >
-                                    {{
-                                        item.category === 'achievement'
-                                            ? 'Achievement'
-                                            : item.category === 'turnover'
-                                            ? 'Turnover'
-                                            : item.category === 'milestone'
-                                            ? 'Milestone'
-                                            : 'Completed Project'
-                                    }}
+                            <div class="absolute top-2 left-2 flex items-center gap-1">
+                                <span class="px-2 py-0.5 bg-black/75 text-white text-[10px] font-semibold rounded uppercase font-mono">
+                                    {{ item.category === 'completed_project' ? 'Project' : item.category }}
                                 </span>
-                                <span v-if="item.year" class="px-1.5 py-0.5 bg-black/70 text-white text-[9px] font-bold rounded">
+                                <span v-if="item.year" class="px-1.5 py-0.5 bg-black/60 text-white text-[9px] rounded font-mono">
                                     {{ item.year }}
                                 </span>
                             </div>
 
-                            <!-- Preview Zoom button -->
                             <button
                                 @click="previewImage = item.url"
-                                class="absolute top-2.5 right-2.5 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                                class="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                                 title="Zoom photo"
                             >
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                                </svg>
+                                <i class="ri-zoom-in-line text-xs"></i>
                             </button>
                         </div>
 
-                        <!-- Content info -->
+                        <!-- Card Info -->
                         <div class="p-3 flex-1 flex flex-col justify-between space-y-2">
-                            <div>
-                                <h4 class="text-xs font-bold text-slate-800 line-clamp-1 group-hover:text-emerald-700 transition-colors">
+                            <div class="space-y-1">
+                                <h3 class="text-xs font-bold text-gray-900 line-clamp-1">
                                     {{ item.title || 'Untitled Picture' }}
-                                </h4>
-                                <p v-if="item.location" class="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                    <svg class="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
+                                </h3>
+                                <p v-if="item.location" class="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                                    <i class="ri-map-pin-line text-gray-400"></i>
                                     <span class="truncate">{{ item.location }}</span>
                                 </p>
-                                <p v-if="item.caption" class="text-[11px] text-slate-600 line-clamp-2 mt-1">
+                                <p v-if="item.caption" class="text-[11px] text-gray-600 line-clamp-2 leading-relaxed">
                                     {{ item.caption }}
                                 </p>
                             </div>
 
-                            <!-- Bottom card controls -->
-                            <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
+                            <!-- Controls -->
+                            <div class="pt-2 border-t border-gray-100 flex items-center justify-between gap-1 text-xs">
                                 <button
                                     @click="editingAchievement = { ...item }"
-                                    class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 px-2 py-1 rounded transition-colors"
+                                    class="font-medium text-emerald-700 hover:text-emerald-900 px-1.5 py-0.5 rounded hover:bg-emerald-50 transition-colors cursor-pointer"
                                 >
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                    <span>Edit</span>
+                                    Edit Details
                                 </button>
 
                                 <div class="flex items-center gap-1">
                                     <button
                                         @click="moveAchievement(idx, -1)"
                                         :disabled="idx === 0"
-                                        class="p-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
-                                        title="Move Left"
+                                        class="p-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+                                        title="Move left"
                                     >
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                                        <i class="ri-arrow-left-s-line text-xs"></i>
                                     </button>
                                     <button
                                         @click="moveAchievement(idx, 1)"
                                         :disabled="idx === achievementImages.length - 1"
-                                        class="p-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
-                                        title="Move Right"
+                                        class="p-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+                                        title="Move right"
                                     >
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                                        <i class="ri-arrow-right-s-line text-xs"></i>
                                     </button>
                                     <button
                                         @click="deleteAchievement(item.id)"
-                                        class="p-1 rounded text-red-500 hover:bg-red-50 transition-colors"
+                                        class="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                                         title="Delete photo"
                                     >
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
+                                        <i class="ri-delete-bin-line text-xs"></i>
                                     </button>
                                 </div>
                             </div>
@@ -989,127 +861,114 @@ onUnmounted(() => {
             </div>
         </div>
 
-        <!-- Edit Achievement Item Modal -->
+        <!-- ================= MODAL: EDIT DETAILS ================= -->
         <div
             v-if="editingAchievement"
-            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            @click="editingAchievement = null"
+            class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
         >
-            <div
-                class="bg-white max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200"
-                @click.stop
-            >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit Picture & Achievement Details
-                    </h3>
-                    <button
-                        @click="editingAchievement = null"
-                        class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            <div class="bg-white rounded-xl border border-gray-200 shadow-xl max-w-lg w-full overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h3 class="text-base font-bold text-gray-900">Edit Photo Details</h3>
+                    <button @click="editingAchievement = null" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+                        <i class="ri-close-line text-lg"></i>
                     </button>
                 </div>
 
-                <!-- Preview thumbnail -->
-                <div class="h-36 overflow-hidden bg-slate-100 border border-slate-200">
-                    <img :src="editingAchievement.url" alt="Edit preview" class="w-full h-full object-cover" />
-                </div>
+                <div class="p-5 space-y-3.5 text-xs max-h-[75vh] overflow-y-auto">
+                    <!-- Thumbnail preview -->
+                    <div class="h-36 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                        <img :src="editingAchievement.url" alt="Preview" class="w-full h-full object-cover" />
+                    </div>
 
-                <div class="space-y-3">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Project / Achievement Title</label>
+                        <label class="block text-[11px] font-semibold text-gray-700 mb-1">Title / Headline</label>
                         <input
                             v-model="editingAchievement.title"
                             type="text"
-                            placeholder="e.g. Multi-Purpose Gymnasium Turn-over"
-                            class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                            placeholder="e.g. Multi-Purpose Building Turn-over"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-emerald-600 text-xs"
                         />
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+                            <label class="block text-[11px] font-semibold text-gray-700 mb-1">Category</label>
                             <select
                                 v-model="editingAchievement.category"
-                                class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-emerald-600 bg-white text-xs"
                             >
                                 <option value="completed_project">Completed Project</option>
                                 <option value="turnover">Turnover / Inauguration</option>
                                 <option value="achievement">Achievement & Award</option>
-                                <option value="milestone">Key Milestone</option>
+                                <option value="milestone">Milestone</option>
                             </select>
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Year / Timeline</label>
+                            <label class="block text-[11px] font-semibold text-gray-700 mb-1">Year / Timeline</label>
                             <input
                                 v-model="editingAchievement.year"
                                 type="text"
-                                placeholder="e.g. 2026 or FY 2026"
-                                class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                                placeholder="e.g. 2026"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-emerald-600 text-xs"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Location / Barangay</label>
+                        <label class="block text-[11px] font-semibold text-gray-700 mb-1">Location / Barangay</label>
                         <input
                             v-model="editingAchievement.location"
                             type="text"
                             placeholder="e.g. Barangay Poblacion, Opol"
-                            class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-emerald-600 text-xs"
                         />
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Caption / Details (Optional)</label>
+                        <label class="block text-[11px] font-semibold text-gray-700 mb-1">Caption / Summary</label>
                         <textarea
                             v-model="editingAchievement.caption"
                             rows="3"
-                            placeholder="Provide brief details or highlights of this completed work or milestone..."
-                            class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                            placeholder="Provide brief details or highlights..."
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-emerald-600 text-xs"
                         ></textarea>
                     </div>
                 </div>
 
-                <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <div class="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2 text-xs">
                     <button
                         @click="editingAchievement = null"
-                        class="px-3.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        class="px-3.5 py-1.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium cursor-pointer"
                     >
                         Cancel
                     </button>
                     <button
                         @click="saveEditedAchievement"
-                        class="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors"
+                        class="px-4 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium cursor-pointer"
                     >
-                        Apply Changes
+                        Save Changes
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Image Lightbox Modal -->
+        <!-- ================= LIGHTBOX ZOOM ================= -->
         <div
             v-if="previewImage"
-            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
+            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs"
             @click="previewImage = null"
         >
-            <div class="relative max-w-4xl max-h-[90vh] bg-slate-900 overflow-hidden shadow-2xl" @click.stop>
+            <div class="relative max-w-4xl max-h-[90vh] bg-slate-900 rounded-lg overflow-hidden shadow-2xl" @click.stop>
                 <img :src="previewImage" alt="Zoom preview" class="w-full max-h-[85vh] object-contain" />
                 <button
                     @click="previewImage = null"
-                    class="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/90 text-white rounded-full transition-colors"
+                    class="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/90 text-white rounded-full transition-colors cursor-pointer"
                 >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <i class="ri-close-line text-lg"></i>
                 </button>
             </div>
         </div>
+
     </div>
 </template>

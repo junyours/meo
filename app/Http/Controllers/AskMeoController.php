@@ -116,6 +116,14 @@ class AskMeoController extends Controller
             'status' => 'pending',
         ]);
 
+        \App\Services\ActivityLogger::log(
+            'inquiries',
+            'create',
+            "New citizen concern #{$trackingToken} submitted by {$inquiry->fullname} ({$inquiry->location}): '{$inquiry->subject}'",
+            'info',
+            ['tracking_token' => $trackingToken, 'location' => $inquiry->location]
+        );
+
         $request->session()->put('active_inquiry_token', $trackingToken);
 
         return redirect()->route('ask.meo', ['token' => $trackingToken])
@@ -138,23 +146,125 @@ class AskMeoController extends Controller
         }
 
         // Search by tracking token or phone number
-        $inquiries = Inquiry::with(['acceptedBy', 'resolvedBy', 'updatedBy'])
+        $inquiries = Inquiry::with(['acceptedBy', 'resolvedBy', 'cancelledBy', 'updatedBy'])
             ->where('tracking_token', $query)
             ->orWhere('phone', $query)
-            ->orWhere('phone', 'like', '%' . preg_replace('/[^0-9]/', '', $query) . '%')
             ->latest()
             ->get();
 
         if ($inquiries->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'No records found matching that Reference Code or Contact Number.',
+                'message' => 'No concern inquiry found matching that Reference Code or Contact Number.',
             ], 404);
         }
 
         return response()->json([
             'success' => true,
+            'count' => $inquiries->count(),
             'inquiries' => $inquiries->map(fn (Inquiry $i) => $this->transformInquiry($i)),
+        ]);
+    }
+
+    /**
+     * Citizen requests cancellation of their submitted concern.
+     */
+    public function cancelConcern(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tracking_token' => ['required', 'string'],
+            'cancellation_reason' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $inquiry = Inquiry::where('tracking_token', $validated['tracking_token'])->first();
+
+        if (! $inquiry) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Concern record not found with that tracking reference.',
+            ], 404);
+        }
+
+        if ($inquiry->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This concern has already been cancelled.',
+            ], 422);
+        }
+
+        if ($inquiry->status === 'resolved') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot request cancellation for an already resolved concern.',
+            ], 422);
+        }
+
+        $reason = $validated['cancellation_reason'] ?: 'Cancellation requested by citizen';
+
+        $inquiry->update([
+            'status' => 'cancel_requested',
+            'cancellation_reason' => $reason,
+        ]);
+
+        \App\Services\ActivityLogger::log(
+            'inquiries',
+            'cancel_requested',
+            "Citizen {$inquiry->fullname} submitted cancellation request for concern #{$inquiry->tracking_token}. Reason: {$reason}",
+            'warning',
+            ['tracking_token' => $inquiry->tracking_token, 'reason' => $reason]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Your cancellation request has been submitted and is awaiting confirmation by MEO staff/admin.',
+            'inquiry' => $this->transformInquiry($inquiry->fresh(['acceptedBy', 'resolvedBy', 'cancelledBy', 'updatedBy'])),
+        ]);
+    }
+
+    /**
+     * Citizen withdraws their cancellation request (reverts to active status).
+     */
+    public function withdrawCancel(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tracking_token' => ['required', 'string'],
+        ]);
+
+        $inquiry = Inquiry::where('tracking_token', $validated['tracking_token'])->first();
+
+        if (! $inquiry) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Concern record not found with that tracking reference.',
+            ], 404);
+        }
+
+        if ($inquiry->status !== 'cancel_requested') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This concern does not have a pending cancellation request.',
+            ], 422);
+        }
+
+        $revertStatus = $inquiry->accepted_by ? 'accepted' : 'pending';
+
+        $inquiry->update([
+            'status' => $revertStatus,
+            'cancellation_reason' => null,
+        ]);
+
+        \App\Services\ActivityLogger::log(
+            'inquiries',
+            'withdraw_cancel',
+            "Citizen {$inquiry->fullname} withdrew cancellation request for concern #{$inquiry->tracking_token}. Status reverted to {$revertStatus}.",
+            'info',
+            ['tracking_token' => $inquiry->tracking_token, 'status' => $revertStatus]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cancellation request withdrawn. Your concern remains active for MEO action.',
+            'inquiry' => $this->transformInquiry($inquiry->fresh(['acceptedBy', 'resolvedBy', 'cancelledBy', 'updatedBy'])),
         ]);
     }
 
@@ -173,7 +283,7 @@ class AskMeoController extends Controller
      */
     public function adminIndex(): JsonResponse
     {
-        $inquiries = Inquiry::with(['acceptedBy', 'resolvedBy', 'updatedBy'])
+        $inquiries = Inquiry::with(['acceptedBy', 'resolvedBy', 'cancelledBy', 'updatedBy'])
             ->latest()
             ->get()
             ->map(fn (Inquiry $i) => $this->transformInquiry($i));
@@ -182,13 +292,14 @@ class AskMeoController extends Controller
     }
 
     /**
-     * Admin/Staff update status (Accept, Resolve, Decline).
+     * Admin/Staff update status (Accept, Resolve, Decline, Cancel).
      */
     public function updateStatus(Request $request, Inquiry $inquiry): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['required', 'string', 'in:pending,accepted,resolved,declined'],
+            'status' => ['required', 'string', 'in:pending,accepted,resolved,declined,cancel_requested,cancelled'],
             'admin_notes' => ['nullable', 'string', 'max:2000'],
+            'cancellation_reason' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $userId = auth()->id();
@@ -197,6 +308,10 @@ class AskMeoController extends Controller
             'admin_notes' => $validated['admin_notes'] ?? $inquiry->admin_notes,
             'updated_by' => $userId,
         ];
+
+        if (isset($validated['cancellation_reason'])) {
+            $updates['cancellation_reason'] = $validated['cancellation_reason'];
+        }
 
         if ($validated['status'] === 'accepted') {
             if (! $inquiry->accepted_at) {
@@ -212,12 +327,49 @@ class AskMeoController extends Controller
             $updates['resolved_by'] = $userId;
         }
 
+        if ($validated['status'] === 'cancelled') {
+            if (! $inquiry->cancelled_at) {
+                $updates['cancelled_at'] = now();
+            }
+            $updates['cancelled_by'] = $userId;
+        }
+
         $inquiry->update($updates);
+
+        $currentUser = auth()->user();
+        $severity = match ($validated['status']) {
+            'resolved' => 'success',
+            'accepted' => 'info',
+            'cancelled' => 'warning',
+            'declined' => 'warning',
+            default => 'info',
+        };
+
+        $actionDesc = match ($validated['status']) {
+            'accepted' => "Officer {$currentUser?->name} accepted concern #{$inquiry->tracking_token} for inspection.",
+            'resolved' => "Officer {$currentUser?->name} marked concern #{$inquiry->tracking_token} as resolved.",
+            'cancelled' => "Officer {$currentUser?->name} confirmed cancellation for concern #{$inquiry->tracking_token}.",
+            'declined' => "Officer {$currentUser?->name} declined concern #{$inquiry->tracking_token}.",
+            default => "Officer {$currentUser?->name} updated concern #{$inquiry->tracking_token} status to {$validated['status']}.",
+        };
+
+        \App\Services\ActivityLogger::log(
+            'inquiries',
+            $validated['status'],
+            $actionDesc,
+            $severity,
+            [
+                'tracking_token' => $inquiry->tracking_token,
+                'status' => $validated['status'],
+                'admin_notes' => $validated['admin_notes'] ?? null,
+                'cancellation_reason' => $validated['cancellation_reason'] ?? null,
+            ]
+        );
 
         return response()->json([
             'success' => true,
             'message' => "Inquiry status updated to {$validated['status']}.",
-            'inquiry' => $this->transformInquiry($inquiry->fresh(['acceptedBy', 'resolvedBy', 'updatedBy'])),
+            'inquiry' => $this->transformInquiry($inquiry->fresh(['acceptedBy', 'resolvedBy', 'cancelledBy', 'updatedBy'])),
         ]);
     }
 
@@ -226,6 +378,9 @@ class AskMeoController extends Controller
      */
     public function destroy(Inquiry $inquiry): JsonResponse
     {
+        $token = $inquiry->tracking_token;
+        $citizen = $inquiry->fullname;
+
         if (!empty($inquiry->photos) && is_array($inquiry->photos)) {
             foreach ($inquiry->photos as $p) {
                 if ($p && Storage::disk('public')->exists($p)) {
@@ -239,6 +394,14 @@ class AskMeoController extends Controller
         }
 
         $inquiry->delete();
+
+        \App\Services\ActivityLogger::log(
+            'inquiries',
+            'delete',
+            "Inquiry record #{$token} (Citizen: {$citizen}) was deleted from the system.",
+            'danger',
+            ['tracking_token' => $token, 'citizen' => $citizen]
+        );
 
         return response()->json(['success' => true, 'message' => 'Inquiry deleted.']);
     }
@@ -261,6 +424,7 @@ class AskMeoController extends Controller
             'photo_urls' => $inquiry->photo_urls,
             'status' => $inquiry->status,
             'admin_notes' => $inquiry->admin_notes,
+            'cancellation_reason' => $inquiry->cancellation_reason,
             'accepted_at' => $inquiry->accepted_at?->format('M j, Y g:i A'),
             'accepted_by' => $inquiry->accepted_by,
             'accepted_by_user' => $inquiry->acceptedBy ? [
@@ -274,6 +438,13 @@ class AskMeoController extends Controller
                 'id' => $inquiry->resolvedBy->id,
                 'name' => $inquiry->resolvedBy->name,
                 'role' => $inquiry->resolvedBy->role,
+            ] : null,
+            'cancelled_at' => $inquiry->cancelled_at?->format('M j, Y g:i A'),
+            'cancelled_by' => $inquiry->cancelled_by,
+            'cancelled_by_user' => $inquiry->cancelledBy ? [
+                'id' => $inquiry->cancelledBy->id,
+                'name' => $inquiry->cancelledBy->name,
+                'role' => $inquiry->cancelledBy->role,
             ] : null,
             'updated_by' => $inquiry->updated_by,
             'updated_by_user' => $inquiry->updatedBy ? [

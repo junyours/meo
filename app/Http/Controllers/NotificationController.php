@@ -107,7 +107,7 @@ class NotificationController extends Controller
         });
 
         // 5. Citizen Inquiries (For Admin, Superadmin & Staff)
-        $inquiries = Inquiry::with(['acceptedBy', 'resolvedBy'])
+        $inquiries = Inquiry::with(['acceptedBy', 'resolvedBy', 'cancelledBy'])
             ->latest()
             ->get()
             ->map(fn (Inquiry $i) => [
@@ -121,12 +121,36 @@ class NotificationController extends Controller
                 'message' => $i->message,
                 'status' => $i->status,
                 'admin_notes' => $i->admin_notes,
+                'cancellation_reason' => $i->cancellation_reason,
+                'cancelled_at' => optional($i->cancelled_at)->toISOString(),
                 'photo_urls' => $i->photo_urls ?? [],
                 'accepted_by_name' => $i->acceptedBy?->name,
                 'resolved_by_name' => $i->resolvedBy?->name,
+                'cancelled_by_name' => $i->cancelledBy?->name,
                 'createdAt' => optional($i->created_at)->toISOString(),
                 'created_at_relative' => $i->created_at?->diffForHumans(),
             ]);
+
+        // 6. Security & Audit Alerts (For Superadmin)
+        $systemLogs = [];
+        if ($role === 'superadmin') {
+            $systemLogs = \App\Models\ActivityLog::whereIn('severity', ['warning', 'danger'])
+                ->latest()
+                ->take(15)
+                ->get()
+                ->map(fn (\App\Models\ActivityLog $l) => [
+                    'id' => $l->id,
+                    'user_name' => $l->user_name,
+                    'user_role' => $l->user_role,
+                    'module' => $l->module,
+                    'action' => $l->action,
+                    'description' => $l->description,
+                    'severity' => $l->severity,
+                    'ip_address' => $l->ip_address,
+                    'createdAt' => optional($l->created_at)->toISOString(),
+                    'created_at_relative' => $l->created_at?->diffForHumans(),
+                ]);
+        }
 
         return Inertia::render('Notificationspage', [
             'initialProjects' => $projects,
@@ -134,6 +158,7 @@ class NotificationController extends Controller
             'initialReminders' => $reminders,
             'initialAssignments' => $assignments,
             'initialInquiries' => $inquiries,
+            'initialSystemLogs' => $systemLogs,
             'users' => User::all(['id', 'name', 'email', 'role', 'profile_photo_path']),
         ]);
     }
