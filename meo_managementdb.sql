@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Aug 27, 2026 at 08:24 AM
+-- Generation Time: Sep 02, 2026 at 06:53 AM
 -- Server version: 8.0.30
 -- PHP Version: 8.1.10
 
@@ -20,6 +20,56 @@ SET time_zone = "+00:00";
 --
 -- Database: `meo_managementdb`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_logs`
+--
+
+CREATE TABLE `activity_logs` (
+  `id` bigint UNSIGNED NOT NULL,
+  `user_id` bigint UNSIGNED DEFAULT NULL,
+  `user_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_role` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `module` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'system',
+  `action` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `severity` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'info',
+  `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` text COLLATE utf8mb4_unicode_ci,
+  `properties` json DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `activity_logs`
+--
+
+INSERT INTO `activity_logs` (`id`, `user_id`, `user_name`, `user_email`, `user_role`, `module`, `action`, `description`, `severity`, `ip_address`, `user_agent`, `properties`, `created_at`, `updated_at`) VALUES
+(1, NULL, 'System Engine', NULL, 'system', 'system', 'initialize', 'Municipal Engineering Office Management System successfully initialized with database schemas.', 'success', '127.0.0.1', 'System Bootstrapper', '{\"version\": \"1.0.0\", \"environment\": \"local\"}', '2026-08-31 22:12:21', '2026-08-31 22:12:21'),
+(2, 3, 'Super Administrator', 'superadmin@meo.local', 'superadmin', 'users', 'create', 'Official superadmin account for \'Super Administrator\' (superadmin@meo.local) was provisioned.', 'warning', '127.0.0.1', 'Administrative Console', '{\"role\": \"superadmin\", \"email\": \"superadmin@meo.local\", \"user_id\": 3}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(3, 4, 'Administrator', 'admin@meo.local', 'admin', 'users', 'create', 'Official admin account for \'Administrator\' (admin@meo.local) was provisioned.', 'info', '127.0.0.1', 'Administrative Console', '{\"role\": \"admin\", \"email\": \"admin@meo.local\", \"user_id\": 4}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(4, 5, 'Staff Member', 'staff@meo.local', 'staff', 'users', 'create', 'Official staff account for \'Staff Member\' (staff@meo.local) was provisioned.', 'info', '127.0.0.1', 'Administrative Console', '{\"role\": \"staff\", \"email\": \"staff@meo.local\", \"user_id\": 5}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(5, 7, 'Charlie Nipaya', 'charlienp@gmail.com', 'staff', 'users', 'create', 'Official staff account for \'Charlie Nipaya\' (charlienp@gmail.com) was provisioned.', 'info', '127.0.0.1', 'Administrative Console', '{\"role\": \"staff\", \"email\": \"charlienp@gmail.com\", \"user_id\": 7}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(6, 8, 'Joge Cyle Opena', 'jogecyle@meo.local', 'staff', 'users', 'create', 'Official staff account for \'Joge Cyle Opena\' (jogecyle@meo.local) was provisioned.', 'info', '127.0.0.1', 'Administrative Console', '{\"role\": \"staff\", \"email\": \"jogecyle@meo.local\", \"user_id\": 8}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(7, NULL, 'Superadmin Official', NULL, 'superadmin', 'projects', 'create', 'Infrastructure project record \'Joge Project\' was registered under LGSF (Status: Ongoing).', 'info', '127.0.0.1', 'MEO Project Management Portal', '{\"budget\": 1, \"status\": \"Ongoing\", \"location\": \"Opol\", \"project_id\": 5, \"project_name\": \"Joge Project\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(8, NULL, 'Superadmin Official', NULL, 'superadmin', 'projects', 'create', 'Infrastructure project record \'OCC Toilet\' was registered under LGU - Fund (Status: Ongoing).', 'info', '127.0.0.1', 'MEO Project Management Portal', '{\"budget\": 124000, \"status\": \"Ongoing\", \"location\": \"Opol Community College\", \"project_id\": 4, \"project_name\": \"OCC Toilet\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(9, NULL, 'Superadmin Official', NULL, 'superadmin', 'projects', 'create', 'Infrastructure project record \'Rehabilitation of Municipal Hall\' was registered under LGSF (Status: Ongoing).', 'info', '127.0.0.1', 'MEO Project Management Portal', '{\"budget\": 2000000, \"status\": \"Ongoing\", \"location\": \"Opol,Poblacion,Misamis Oriental\", \"project_id\": 3, \"project_name\": \"Rehabilitation of Municipal Hall\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(10, NULL, 'Gedeoni Ammiel N. Pairat', 'staff@meo.local', 'citizen', 'inquiries', 'submit', 'Public concern #MEO-20260901-7FCZ submitted by Gedeoni Ammiel N. Pairat for Opol: \'Spider\'', 'info', '127.0.0.1', 'Ask MEO Citizen Portal', '{\"subject\": \"Spider\", \"fullname\": \"Gedeoni Ammiel N. Pairat\", \"location\": \"Opol\", \"tracking_token\": \"MEO-20260901-7FCZ\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(11, NULL, 'Super Administrator', NULL, 'superadmin', 'inquiries', 'cancel', 'Cancellation of concern #MEO-20260901-7FCZ confirmed. Reason: No longer needed or applicable', 'warning', '127.0.0.1', 'Administrative Console', '{\"reason\": \"No longer needed or applicable\", \"tracking_token\": \"MEO-20260901-7FCZ\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(12, NULL, 'Gedeoni Ammiel N. Pairat', 'occ.pairat.gedeoniammiel@gmail.com', 'citizen', 'inquiries', 'submit', 'Public concern #MEO-20260901-G1G7 submitted by Gedeoni Ammiel N. Pairat for Igpit: \'Ask about spider man\'', 'info', '127.0.0.1', 'Ask MEO Citizen Portal', '{\"subject\": \"Ask about spider man\", \"fullname\": \"Gedeoni Ammiel N. Pairat\", \"location\": \"Igpit\", \"tracking_token\": \"MEO-20260901-G1G7\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(13, NULL, 'Super Administrator', NULL, 'superadmin', 'inquiries', 'cancel', 'Cancellation of concern #MEO-20260901-G1G7 confirmed. Reason: No longer needed or applicable', 'warning', '127.0.0.1', 'Administrative Console', '{\"reason\": \"No longer needed or applicable\", \"tracking_token\": \"MEO-20260901-G1G7\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(14, NULL, 'Joge Cyle Opena', NULL, 'citizen', 'inquiries', 'submit', 'Public concern #MEO-20260826-WSXH submitted by Joge Cyle Opena for Igpit: \'Naay Liki and dalan\'', 'info', '127.0.0.1', 'Ask MEO Citizen Portal', '{\"subject\": \"Naay Liki and dalan\", \"fullname\": \"Joge Cyle Opena\", \"location\": \"Igpit\", \"tracking_token\": \"MEO-20260826-WSXH\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(15, 4, 'Administrator', 'admin@meo.local', 'admin', 'inquiries', 'resolve', 'Concern #MEO-20260826-WSXH was resolved and closed by Administrator.', 'success', '127.0.0.1', 'Administrative Console', '{\"notes\": null, \"tracking_token\": \"MEO-20260826-WSXH\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(16, NULL, 'Chabertzieni', NULL, 'citizen', 'inquiries', 'submit', 'Public concern #MEO-20260826-BB2F submitted by Chabertzieni for Puntakan, Poblacion, Opol: \'Akoy naguguluhan\'', 'info', '127.0.0.1', 'Ask MEO Citizen Portal', '{\"subject\": \"Akoy naguguluhan\", \"fullname\": \"Chabertzieni\", \"location\": \"Puntakan, Poblacion, Opol\", \"tracking_token\": \"MEO-20260826-BB2F\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(17, 4, 'Administrator', 'admin@meo.local', 'admin', 'inquiries', 'resolve', 'Concern #MEO-20260826-BB2F was resolved and closed by Administrator.', 'success', '127.0.0.1', 'Administrative Console', '{\"notes\": \"Kuan na lala\", \"tracking_token\": \"MEO-20260826-BB2F\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(18, NULL, 'Joge Cyle Opena', 'samplegmail@gmail.com', 'citizen', 'inquiries', 'submit', 'Public concern #MEO-20260824-XC0P submitted by Joge Cyle Opena for Igpit: \'Naay Liki and dalan\'', 'info', '127.0.0.1', 'Ask MEO Citizen Portal', '{\"subject\": \"Naay Liki and dalan\", \"fullname\": \"Joge Cyle Opena\", \"location\": \"Igpit\", \"tracking_token\": \"MEO-20260824-XC0P\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(19, 3, 'Super Administrator', 'superadmin@meo.local', 'superadmin', 'inquiries', 'resolve', 'Concern #MEO-20260824-XC0P was resolved and closed by Super Administrator.', 'success', '127.0.0.1', 'Administrative Console', '{\"notes\": null, \"tracking_token\": \"MEO-20260824-XC0P\"}', '2026-08-31 22:12:22', '2026-08-31 22:12:22'),
+(20, 3, 'Super Administrator', 'superadmin@meo.local', 'superadmin', 'system', 'export', 'Superadmin exported system audit activity logs to CSV.', 'info', '10.0.0.44', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36', '{\"file_name\": \"meo_activity_logs_2026-09-01_061245.csv\"}', '2026-08-31 22:12:45', '2026-08-31 22:12:45'),
+(21, 3, 'Super Administrator', 'superadmin@meo.local', 'superadmin', 'auth', 'logout', 'User \'Super Administrator\' (superadmin@meo.local) logged out of the session.', 'info', '10.0.0.44', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36', '{\"role\": \"superadmin\", \"user_id\": 3}', '2026-09-01 00:56:56', '2026-09-01 00:56:56');
 
 -- --------------------------------------------------------
 
@@ -201,23 +251,28 @@ CREATE TABLE `inquiries_tb` (
   `photos` json DEFAULT NULL,
   `status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `admin_notes` text COLLATE utf8mb4_unicode_ci,
+  `cancellation_reason` text COLLATE utf8mb4_unicode_ci,
+  `cancelled_at` timestamp NULL DEFAULT NULL,
   `accepted_at` timestamp NULL DEFAULT NULL,
   `resolved_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   `accepted_by` bigint UNSIGNED DEFAULT NULL,
   `resolved_by` bigint UNSIGNED DEFAULT NULL,
-  `updated_by` bigint UNSIGNED DEFAULT NULL
+  `updated_by` bigint UNSIGNED DEFAULT NULL,
+  `cancelled_by` bigint UNSIGNED DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `inquiries_tb`
 --
 
-INSERT INTO `inquiries_tb` (`id`, `tracking_token`, `fullname`, `phone`, `email`, `location`, `subject`, `message`, `photo_path`, `photos`, `status`, `admin_notes`, `accepted_at`, `resolved_at`, `created_at`, `updated_at`, `accepted_by`, `resolved_by`, `updated_by`) VALUES
-(3, 'MEO-20260824-XC0P', 'Joge Cyle Opena', '097287324873', 'samplegmail@gmail.com', 'Igpit', 'Naay Liki and dalan', 'Need action lang ana ra.', 'inquiries/cp8BIKR9uV42yUwkhdSspYVCEynCcIgzkbhlT7Us.jpg', '[\"inquiries/cp8BIKR9uV42yUwkhdSspYVCEynCcIgzkbhlT7Us.jpg\", \"inquiries/sKzEP1IorELVfGNMPuvW978NTnDEG971oi8EPzme.jpg\", \"inquiries/AyccCvx7rv0AAYmj9WJ5k1nc5KNEhex2ktUxYa2F.jpg\"]', 'resolved', NULL, '2026-08-23 23:37:04', '2026-08-23 23:37:32', '2026-08-23 23:36:30', '2026-08-23 23:37:32', 3, 3, 3),
-(4, 'MEO-20260826-BB2F', 'Chabertzieni', '09084444369', NULL, 'Puntakan, Poblacion, Opol', 'Akoy naguguluhan', 'Ano po ba ang Radyo aktibong kaka? Tenks.', NULL, '[]', 'resolved', 'Kuan na lala', '2026-08-25 23:51:49', '2026-08-25 23:53:23', '2026-08-25 23:50:17', '2026-08-25 23:53:23', 4, 4, 4),
-(5, 'MEO-20260826-WSXH', 'Joge Cyle Opena', '097287324873', NULL, 'Igpit', 'Naay Liki and dalan', 'Ano ano ano ano ano', NULL, '[]', 'resolved', NULL, '2026-08-26 00:11:02', '2026-08-26 00:11:10', '2026-08-26 00:10:46', '2026-08-26 00:11:10', 4, 4, 4);
+INSERT INTO `inquiries_tb` (`id`, `tracking_token`, `fullname`, `phone`, `email`, `location`, `subject`, `message`, `photo_path`, `photos`, `status`, `admin_notes`, `cancellation_reason`, `cancelled_at`, `accepted_at`, `resolved_at`, `created_at`, `updated_at`, `accepted_by`, `resolved_by`, `updated_by`, `cancelled_by`) VALUES
+(3, 'MEO-20260824-XC0P', 'Joge Cyle Opena', '097287324873', 'samplegmail@gmail.com', 'Igpit', 'Naay Liki and dalan', 'Need action lang ana ra.', 'inquiries/cp8BIKR9uV42yUwkhdSspYVCEynCcIgzkbhlT7Us.jpg', '[\"inquiries/cp8BIKR9uV42yUwkhdSspYVCEynCcIgzkbhlT7Us.jpg\", \"inquiries/sKzEP1IorELVfGNMPuvW978NTnDEG971oi8EPzme.jpg\", \"inquiries/AyccCvx7rv0AAYmj9WJ5k1nc5KNEhex2ktUxYa2F.jpg\"]', 'resolved', NULL, NULL, NULL, '2026-08-23 23:37:04', '2026-08-23 23:37:32', '2026-08-23 23:36:30', '2026-08-23 23:37:32', 3, 3, 3, NULL),
+(4, 'MEO-20260826-BB2F', 'Chabertzieni', '09084444369', NULL, 'Puntakan, Poblacion, Opol', 'Akoy naguguluhan', 'Ano po ba ang Radyo aktibong kaka? Tenks.', NULL, '[]', 'resolved', 'Kuan na lala', NULL, NULL, '2026-08-25 23:51:49', '2026-08-25 23:53:23', '2026-08-25 23:50:17', '2026-08-25 23:53:23', 4, 4, 4, NULL),
+(5, 'MEO-20260826-WSXH', 'Joge Cyle Opena', '097287324873', NULL, 'Igpit', 'Naay Liki and dalan', 'Ano ano ano ano ano', NULL, '[]', 'resolved', NULL, NULL, NULL, '2026-08-26 00:11:02', '2026-08-26 00:11:10', '2026-08-26 00:10:46', '2026-08-26 00:11:10', 4, 4, 4, NULL),
+(6, 'MEO-20260901-G1G7', 'Gedeoni Ammiel N. Pairat', '09706209298', 'occ.pairat.gedeoniammiel@gmail.com', 'Igpit', 'Ask about spider man', 'Pew pew spider man', NULL, '[]', 'cancelled', NULL, 'No longer needed or applicable', '2026-08-31 21:37:28', NULL, NULL, '2026-08-31 21:34:46', '2026-08-31 21:37:28', NULL, NULL, 3, 3),
+(7, 'MEO-20260901-7FCZ', 'Gedeoni Ammiel N. Pairat', '+1 (555) 123-4567', 'staff@meo.local', 'Opol', 'Spider', 'spaydey', NULL, '[]', 'cancelled', NULL, 'No longer needed or applicable', '2026-08-31 21:48:47', NULL, NULL, '2026-08-31 21:47:51', '2026-08-31 21:48:47', NULL, NULL, 3, 3);
 
 -- --------------------------------------------------------
 
@@ -270,7 +325,9 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (32, '2026_08_24_000000_create_inquiries_table', 6),
 (33, '2026_08_24_000001_add_photos_to_inquiries_table', 7),
 (34, '2026_08_24_000002_add_user_tracking_to_inquiries_table', 8),
-(35, '2026_08_25_000000_add_conversation_to_staff_assignments_table', 9);
+(35, '2026_08_25_000000_add_conversation_to_staff_assignments_table', 9),
+(36, '2026_09_01_000000_add_cancellation_fields_to_inquiries_table', 10),
+(37, '2026_09_01_010000_create_activity_logs_table', 11);
 
 -- --------------------------------------------------------
 
@@ -572,6 +629,16 @@ INSERT INTO `welcome_contents` (`id`, `hero_title`, `hero_description`, `hero_im
 --
 
 --
+-- Indexes for table `activity_logs`
+--
+ALTER TABLE `activity_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `activity_logs_user_id_foreign` (`user_id`),
+  ADD KEY `activity_logs_module_index` (`module`),
+  ADD KEY `activity_logs_action_index` (`action`),
+  ADD KEY `activity_logs_severity_index` (`severity`);
+
+--
 -- Indexes for table `bulletins`
 --
 ALTER TABLE `bulletins`
@@ -642,7 +709,8 @@ ALTER TABLE `inquiries_tb`
   ADD UNIQUE KEY `inquiries_tb_tracking_token_unique` (`tracking_token`),
   ADD KEY `inquiries_tb_accepted_by_foreign` (`accepted_by`),
   ADD KEY `inquiries_tb_resolved_by_foreign` (`resolved_by`),
-  ADD KEY `inquiries_tb_updated_by_foreign` (`updated_by`);
+  ADD KEY `inquiries_tb_updated_by_foreign` (`updated_by`),
+  ADD KEY `inquiries_tb_cancelled_by_foreign` (`cancelled_by`);
 
 --
 -- Indexes for table `migrations`
@@ -735,6 +803,12 @@ ALTER TABLE `welcome_contents`
 --
 
 --
+-- AUTO_INCREMENT for table `activity_logs`
+--
+ALTER TABLE `activity_logs`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
+
+--
 -- AUTO_INCREMENT for table `bulletins`
 --
 ALTER TABLE `bulletins`
@@ -786,13 +860,13 @@ ALTER TABLE `infra_audit_tb`
 -- AUTO_INCREMENT for table `inquiries_tb`
 --
 ALTER TABLE `inquiries_tb`
-  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=36;
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=38;
 
 --
 -- AUTO_INCREMENT for table `personal_access_tokens`
@@ -859,6 +933,12 @@ ALTER TABLE `welcome_contents`
 --
 
 --
+-- Constraints for table `activity_logs`
+--
+ALTER TABLE `activity_logs`
+  ADD CONSTRAINT `activity_logs_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL;
+
+--
 -- Constraints for table `document_ai_analysis_tb`
 --
 ALTER TABLE `document_ai_analysis_tb`
@@ -902,6 +982,7 @@ ALTER TABLE `infra_audit_tb`
 --
 ALTER TABLE `inquiries_tb`
   ADD CONSTRAINT `inquiries_tb_accepted_by_foreign` FOREIGN KEY (`accepted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `inquiries_tb_cancelled_by_foreign` FOREIGN KEY (`cancelled_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `inquiries_tb_resolved_by_foreign` FOREIGN KEY (`resolved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `inquiries_tb_updated_by_foreign` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
